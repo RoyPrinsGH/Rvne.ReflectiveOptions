@@ -12,8 +12,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - framework: net6.0
-            dotnet: "6.0.x"
           - framework: net8.0
             dotnet: "8.0.x"
           - framework: net10.0
