@@ -62,7 +62,7 @@ public sealed class ReflectiveOptionsTests
 
         var options = container.DemoButton.CalculateOptions<LayoutOptions>(container);
 
-        Assert.Equal(10, options.Gap);
+        Assert.Equal(15, options.Gap);
     }
 
     [Fact]
