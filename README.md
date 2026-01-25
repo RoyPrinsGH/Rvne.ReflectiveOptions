@@ -33,7 +33,7 @@ public sealed class CarouselOptions
     public CarouselOrientation Orientation { get; set; }
 }
 
-[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
 public sealed class GapAttribute(int value) : Attribute, IOptionAttribute<CarouselOptions>
 {
     public void Apply(CarouselOptions options) => options.Gap = value;
@@ -43,7 +43,7 @@ public sealed class GapAttribute(int value) : Attribute, IOptionAttribute<Carous
 Use `DerivedOptionAttribute<TOptions, TResult>` for derived values:
 
 ```csharp
-[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
 public sealed class DerivedOrientationAttribute(string methodName)
     : DerivedOptionAttribute<CarouselOptions, CarouselOrientation>(methodName)
 {
@@ -89,21 +89,24 @@ You can provide a different object for method lookup by passing `derivationConte
 ```csharp
 public sealed class Dashboard
 {
+    public bool IsNarrow { get; set; }
+
     private CarouselOrientation ComputeOrientation()
-        => CarouselOrientation.Horizontal;
+        => IsNarrow ? CarouselOrientation.Vertical : CarouselOrientation.Horizontal;
 
     [DerivedOrientation(nameof(ComputeOrientation))]
-    public sealed class Carousel
-    {
-    }
+    public Carousel Carousel { get; } = new();
 }
 
-var dashboard = new Dashboard();
-var carousel = new Dashboard.Carousel();
-var options = carousel.CalculateOptions<CarouselOptions>(dashboard);
-// options.Orientation == CarouselOrientation.Horizontal
+var dashboard = new Dashboard { IsNarrow = true };
+var options = dashboard.Carousel.CalculateOptions<CarouselOptions>(dashboard);
+// options.Orientation == CarouselOrientation.Vertical
 ```
 
 If `derivationContext` is `null` or omitted, the source object is used.
 
 Attributes are discovered with `inherit: true`, so base-class attributes are applied.
+
+### Value types and member-level attributes
+
+Member-level attributes (on context properties/fields that point at the source object) rely on reference identity. That means they only work for reference types. For value types, there is no reliable way to tell which member you intended if multiple fields/properties share the same value. If you need member-level attributes, use reference types for those components.

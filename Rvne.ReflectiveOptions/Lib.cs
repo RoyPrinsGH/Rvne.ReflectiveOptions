@@ -29,7 +29,10 @@ internal static class UncachedBuilder
     {
         var options = new TOptions();
 
-        foreach (Attribute attr in source.GetType().GetCustomAttributes(inherit: true).Cast<Attribute>())
+        IEnumerable<Attribute> sourceAttributes = source.GetType().GetCustomAttributes(inherit: true).Cast<Attribute>();
+        IEnumerable<Attribute> contextMemberAttributes = GetContextMemberAttributesFor(source, derivationContext);
+
+        foreach (Attribute attr in sourceAttributes.Concat(contextMemberAttributes))
         {
             // Check if it's a compile-time only application
             if (attr is IOptionAttribute<TOptions> optionAttribute)
@@ -52,6 +55,48 @@ internal static class UncachedBuilder
         }
 
         return options;
+    }
+
+    private static IEnumerable<Attribute> GetContextMemberAttributesFor(object source, object derivationContext)
+    {
+        Type sourceType = source.GetType();
+
+        // We need some way of getting the appropriate PropertyInfo or FieldInfo
+        // and the easiest way of getting it is via ReferenceEquals - which doesn't exist on ValueTypes
+        // 
+        // Think about it: If a container has two fields both of the same value type, 
+        // and I call .CalculateOptions<> on one of them,
+        // how could we determine which of the two fields is actually the one being requested for its options?
+        if (sourceType.IsValueType)
+            yield break;
+
+        for (var t = derivationContext.GetType(); t is not null && t != typeof(object); t = t.BaseType)
+        {
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+
+            foreach (var property in t.GetProperties(flags))
+            {
+                if (!property.CanRead || property.GetIndexParameters().Length != 0)
+                    continue;
+
+                object? value = property.GetValue(derivationContext);
+                if (value is not null && ReferenceEquals(value, source))
+                {
+                    foreach (Attribute attr in property.GetCustomAttributes(inherit: true).Cast<Attribute>())
+                        yield return attr;
+                }
+            }
+
+            foreach (var field in t.GetFields(flags))
+            {
+                object? value = field.GetValue(derivationContext);
+                if (value is not null && ReferenceEquals(value, source))
+                {
+                    foreach (Attribute attr in field.GetCustomAttributes(inherit: true).Cast<Attribute>())
+                        yield return attr;
+                }
+            }
+        }
     }
 
     private static object? CallDerivationMethod(string methodName, Type resultType, object context)

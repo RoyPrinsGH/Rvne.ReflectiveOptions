@@ -54,6 +54,18 @@ public sealed class ReflectiveOptionsTests
     }
 
     [Fact]
+    public void CalculateOptions_Applies_Attributes_From_Context_Member()
+    {
+        // A component can be decorated at the member level in a parent container. When the
+        // container is used as derivationContext, those member attributes should apply.
+        var container = new ComponentContainer();
+
+        var options = container.DemoButton.CalculateOptions<LayoutOptions>(container);
+
+        Assert.Equal(10, options.Gap);
+    }
+
+    [Fact]
     public void CalculateOptions_Defaults_DerivationContext_To_Source_When_Null()
     {
         // When no derivationContext is supplied (or null is passed), the source instance
@@ -170,7 +182,7 @@ public sealed class ReflectiveOptionsTests
         Assert.Throws<InvalidOperationException>(() => new TypeMismatchElement().CalculateOptions<LayoutOptions>());
     }
 
-    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Property, AllowMultiple = true, Inherited = true)]
     private sealed class GapAttribute(int value) : Attribute, IOptionAttribute<LayoutOptions>
     {
         public void Apply(LayoutOptions options) => options.Gap = value;
@@ -287,6 +299,16 @@ public sealed class ReflectiveOptionsTests
 
     [Gap(9)]
     private sealed class InheritedLayoutElement : InheritedLayoutBase
+    {
+    }
+
+    private sealed class ComponentContainer
+    {
+        [Gap(10)]
+        public MyButton DemoButton { get; set; } = new();
+    }
+
+    private sealed class MyButton
     {
     }
 
