@@ -1,24 +1,16 @@
 # Rvne.ReflectiveOptions
 
-ReflectiveOptions builds option objects from attributes on a source type. It supports:
+ReflectiveOptions builds option objects from attributes on a source type. It is most useful for configuring complex trees of nested nodes (for example, a layout made of components that are themselves layouts). It supports:
 
 - Compile-time attributes that directly apply values to an options instance.
 - Derived attributes that compute values by invoking parameterless methods on a context object.
 - Inheritance-aware attribute discovery.
 
-## Requirements
+## Targets
 
-- .NET 10 (TargetFramework: `net10.0`)
-
-## Installation
-
-If you keep the project in the same solution, add a project reference:
-
-```bash
-dotnet add <your-project>.csproj reference Rvne.ReflectiveOptions/Rvne.ReflectiveOptions.csproj
-```
-
-If you package it elsewhere, reference it however you normally consume your libraries.
+- `net6.0`
+- `net8.0`
+- `net10.0`
 
 ## Usage
 
@@ -29,16 +21,22 @@ Implement `IOptionAttribute<TOptions>` for compile-time application:
 ```csharp
 using Rvne.ReflectiveOptions;
 
-public sealed class LayoutOptions
+public enum CarouselOrientation
+{
+    Horizontal,
+    Vertical
+}
+
+public sealed class CarouselOptions
 {
     public int Gap { get; set; }
-    public string? Name { get; set; }
+    public CarouselOrientation Orientation { get; set; }
 }
 
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
-public sealed class GapAttribute(int value) : Attribute, IOptionAttribute<LayoutOptions>
+public sealed class GapAttribute(int value) : Attribute, IOptionAttribute<CarouselOptions>
 {
-    public void Apply(LayoutOptions options) => options.Gap = value;
+    public void Apply(CarouselOptions options) => options.Gap = value;
 }
 ```
 
@@ -46,11 +44,11 @@ Use `DerivedOptionAttribute<TOptions, TResult>` for derived values:
 
 ```csharp
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
-public sealed class DerivedNameAttribute(string methodName)
-    : DerivedOptionAttribute<LayoutOptions, string?>(methodName)
+public sealed class DerivedOrientationAttribute(string methodName)
+    : DerivedOptionAttribute<CarouselOptions, CarouselOrientation>(methodName)
 {
-    public override void Apply(string? derivationResult, LayoutOptions options)
-        => options.Name = derivationResult;
+    public override void Apply(CarouselOrientation derivationResult, CarouselOptions options)
+        => options.Orientation = derivationResult;
 }
 ```
 
@@ -58,19 +56,23 @@ public sealed class DerivedNameAttribute(string methodName)
 
 ```csharp
 [Gap(8)]
-[DerivedName(nameof(GetName))]
-public sealed class Card
+[DerivedOrientation(nameof(GetOrientation))]
+public sealed class Carousel
 {
-    private string? GetName() => "primary";
+    public bool IsNarrow { get; set; }
+
+    private CarouselOrientation GetOrientation()
+        => IsNarrow ? CarouselOrientation.Vertical : CarouselOrientation.Horizontal;
 }
 ```
 
 ### 3) Calculate options
 
 ```csharp
-var options = new Card().CalculateOptions<LayoutOptions>();
+var carousel = new Carousel { IsNarrow = true };
+var options = carousel.CalculateOptions<CarouselOptions>();
 // options.Gap == 8
-// options.Name == "primary"
+// options.Orientation == CarouselOrientation.Vertical
 ```
 
 ## Derivation rules
@@ -87,29 +89,21 @@ You can provide a different object for method lookup by passing `derivationConte
 ```csharp
 public sealed class Dashboard
 {
-    private string? ComputeName() => "primary";
+    private CarouselOrientation ComputeOrientation()
+        => CarouselOrientation.Horizontal;
 
-    [DerivedName(nameof(ComputeName))]
-    public sealed class Card
+    [DerivedOrientation(nameof(ComputeOrientation))]
+    public sealed class Carousel
     {
     }
 }
 
 var dashboard = new Dashboard();
-var card = new Dashboard.Card();
-var options = card.CalculateOptions<LayoutOptions>(dashboard);
-// options.Name == "primary"
+var carousel = new Dashboard.Carousel();
+var options = carousel.CalculateOptions<CarouselOptions>(dashboard);
+// options.Orientation == CarouselOrientation.Horizontal
 ```
 
 If `derivationContext` is `null` or omitted, the source object is used.
 
-## Notes
-
-- Attributes are discovered with `inherit: true`, so base-class attributes are applied.
-- The builder is reflection-based and does not cache results.
-
-## Tests
-
-```bash
-dotnet test
-```
+Attributes are discovered with `inherit: true`, so base-class attributes are applied.
