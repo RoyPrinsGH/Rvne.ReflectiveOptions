@@ -1,0 +1,354 @@
+namespace Rvne.ReflectiveOptions.Tests;
+
+using System;
+using System.IO;
+using Rvne.ReflectiveOptions;
+using Xunit;
+
+public sealed class ReflectiveOptionsTests
+{
+    [Fact]
+    public void CalculateOptions_Applies_CompileTime_Attributes()
+    {
+        // BasicLayoutElement is decorated with compile-time attributes that directly implement
+        // IOptionAttribute<LayoutOptions>. CalculateOptions should apply them without any
+        // derivation step, producing a preconfigured LayoutOptions instance.
+        var options = new BasicLayoutElement().CalculateOptions<LayoutOptions>();
+
+        Assert.Equal(5, options.Gap);
+        Assert.Equal("alpha", options.LayoutName);
+    }
+
+    [Fact]
+    public void CalculateOptions_Applies_DerivedOptions_From_Instance_Method()
+    {
+        // The DerivedGap attribute points at a private instance method on the element.
+        // Reflection should invoke that method on the source instance and use its result.
+        var options = new DerivedGapElement().CalculateOptions<LayoutOptions>();
+
+        Assert.Equal(42, options.Gap);
+    }
+
+    [Fact]
+    public void CalculateOptions_Applies_DerivedOptions_From_Static_Method()
+    {
+        // The derived gap method is static here. The builder should still find it and
+        // invoke it without an instance, then assign the returned value to the option.
+        var options = new DerivedStaticGapElement().CalculateOptions<LayoutOptions>();
+
+        Assert.Equal(13, options.Gap);
+    }
+
+    [Fact]
+    public void CalculateOptions_Uses_DerivationContext_When_Provided()
+    {
+        // The nested element is decorated with a derived columns attribute whose method
+        // exists on the parent context. Passing the parent as derivationContext should
+        // route the reflective lookup to that context type rather than the nested element.
+        var parent = new LayoutContext();
+        var child = new LayoutContext.NestedElement();
+
+        var options = child.CalculateOptions<LayoutOptions>(parent);
+
+        Assert.Equal(77, options.Columns);
+    }
+
+    [Fact]
+    public void CalculateOptions_Defaults_DerivationContext_To_Source_When_Null()
+    {
+        // When no derivationContext is supplied (or null is passed), the source instance
+        // should be used as the context for reflective method lookup.
+        var source = new DerivedGapElement();
+
+        var options = source.CalculateOptions<LayoutOptions>(derivationContext: null);
+
+        Assert.Equal(42, options.Gap);
+    }
+
+    [Fact]
+    public void CalculateOptions_Uses_Inherited_Attributes()
+    {
+        // The base class provides attributes (including a derived attribute that calls a
+        // protected method). The derived class should inherit and apply those attributes,
+        // then combine them with its own compile-time gap override.
+        var options = new InheritedLayoutElement().CalculateOptions<LayoutOptions>();
+
+        Assert.Equal("base", options.LayoutName);
+        Assert.Equal(9, options.Columns);
+        Assert.Equal(9, options.Gap);
+    }
+
+    [Fact]
+    public void CalculateOptions_Ignores_Attributes_For_Other_Options_Types()
+    {
+        // This element includes an attribute targeting TypographyOptions. Since we're
+        // calculating LayoutOptions, that attribute should be ignored entirely.
+        var options = new IrrelevantAttributeElement().CalculateOptions<LayoutOptions>();
+
+        Assert.Equal(1, options.Gap);
+    }
+
+    [Fact]
+    public void CalculateOptions_Handles_Derived_Attribute_Through_Intermediate_Base_Class()
+    {
+        // The attribute inherits from an intermediate base class which in turn inherits
+        // DerivedOptionAttribute. The builder should walk base types to detect the generic
+        // DerivedOptionAttribute and still apply the derivation.
+        var options = new IndirectDerivedGapElement().CalculateOptions<LayoutOptions>();
+
+        Assert.Equal(100, options.Gap);
+    }
+
+    [Fact]
+    public void CalculateOptions_Allows_Null_For_ReferenceType_Result()
+    {
+        // The derivation method returns null for a reference type (string?). This is a
+        // valid result and should flow through without an exception.
+        var options = new NullLayoutNameElement().CalculateOptions<LayoutOptions>();
+
+        Assert.True(options.WasNullLayoutName);
+    }
+
+    [Fact]
+    public void CalculateOptions_Allows_Null_For_Nullable_ValueType_Result()
+    {
+        // The derivation method returns null for a Nullable<int>. This should be accepted
+        // and stored as null without throwing.
+        var options = new NullablePaddingElement().CalculateOptions<LayoutOptions>();
+
+        Assert.True(options.WasNullPadding);
+        Assert.Null(options.Padding);
+    }
+
+    [Fact]
+    public void CalculateOptions_Accepts_Derived_Result_Types()
+    {
+        // The attribute expects a Stream, but the method returns a MemoryStream. Because
+        // MemoryStream is assignable to Stream, the result should be accepted.
+        var options = new AssetStreamElement().CalculateOptions<LayoutOptions>();
+
+        Assert.IsType<MemoryStream>(options.AssetStream);
+    }
+
+    [Fact]
+    public void CalculateOptions_Throws_When_Derivation_Method_Missing()
+    {
+        // The attribute points at a method name that doesn't exist on the context type,
+        // so reflection should fail with a MissingMethodException.
+        Assert.Throws<MissingMethodException>(() => new MissingMethodElement().CalculateOptions<LayoutOptions>());
+    }
+
+    [Fact]
+    public void CalculateOptions_Throws_When_Derivation_Method_Has_Parameters()
+    {
+        // A derivation method exists, but it has parameters. The builder requires a
+        // parameterless method, so this should throw.
+        Assert.Throws<InvalidOperationException>(() => new ParameterMethodElement().CalculateOptions<LayoutOptions>());
+    }
+
+    [Fact]
+    public void CalculateOptions_Throws_When_Derivation_Method_Returns_Void()
+    {
+        // A derivation method that returns void is invalid because the builder needs
+        // a value to apply. Expect an InvalidOperationException.
+        Assert.Throws<InvalidOperationException>(() => new VoidMethodElement().CalculateOptions<LayoutOptions>());
+    }
+
+    [Fact]
+    public void CalculateOptions_Throws_When_Null_Returned_For_NonNullable_ValueType()
+    {
+        // The attribute expects an int, but the method returns null. Null is not valid
+        // for non-nullable value types, so this should throw.
+        Assert.Throws<InvalidOperationException>(() => new NullForNonNullableGapElement().CalculateOptions<LayoutOptions>());
+    }
+
+    [Fact]
+    public void CalculateOptions_Throws_When_Derivation_Result_Type_Mismatch()
+    {
+        // The attribute expects an int, but the method returns a string. The result type
+        // is not assignable, so the builder should throw.
+        Assert.Throws<InvalidOperationException>(() => new TypeMismatchElement().CalculateOptions<LayoutOptions>());
+    }
+
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+    private sealed class GapAttribute(int value) : Attribute, IOptionAttribute<LayoutOptions>
+    {
+        public void Apply(LayoutOptions options) => options.Gap = value;
+    }
+
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+    private sealed class LayoutNameAttribute(string value) : Attribute, IOptionAttribute<LayoutOptions>
+    {
+        public void Apply(LayoutOptions options) => options.LayoutName = value;
+    }
+
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+    private sealed class DerivedGapAttribute(string methodName) : DerivedOptionAttribute<LayoutOptions, int>(methodName)
+    {
+        public override void Apply(int derivationResult, LayoutOptions options) => options.Gap = derivationResult;
+    }
+
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+    private sealed class DerivedColumnsAttribute(string methodName) : DerivedOptionAttribute<LayoutOptions, int>(methodName)
+    {
+        public override void Apply(int derivationResult, LayoutOptions options) => options.Columns = derivationResult;
+    }
+
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+    private sealed class DerivedPaddingAttribute(string methodName) : DerivedOptionAttribute<LayoutOptions, int?>(methodName)
+    {
+        public override void Apply(int? derivationResult, LayoutOptions options)
+        {
+            options.Padding = derivationResult;
+            options.WasNullPadding = derivationResult is null;
+        }
+    }
+
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+    private sealed class DerivedLayoutNameAttribute(string methodName) : DerivedOptionAttribute<LayoutOptions, string?>(methodName)
+    {
+        public override void Apply(string? derivationResult, LayoutOptions options) =>
+            options.WasNullLayoutName = derivationResult is null;
+    }
+
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+    private sealed class DerivedAssetStreamAttribute(string methodName) : DerivedOptionAttribute<LayoutOptions, Stream>(methodName)
+    {
+        public override void Apply(Stream derivationResult, LayoutOptions options) => options.AssetStream = derivationResult;
+    }
+
+    private abstract class BaseDerivedGapAttribute(string methodName) : DerivedOptionAttribute<LayoutOptions, int>(methodName)
+    {
+    }
+
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+    private sealed class IndirectDerivedGapAttribute(string methodName) : BaseDerivedGapAttribute(methodName)
+    {
+        public override void Apply(int derivationResult, LayoutOptions options) => options.Gap = derivationResult;
+    }
+
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+    private sealed class IrrelevantDerivedAttribute(string methodName) : DerivedOptionAttribute<TypographyOptions, int>(methodName)
+    {
+        public override void Apply(int derivationResult, TypographyOptions options) => options.FontSize = derivationResult;
+    }
+
+    private sealed class LayoutOptions
+    {
+        public int Gap { get; set; }
+        public string? LayoutName { get; set; }
+        public int Columns { get; set; }
+        public int? Padding { get; set; }
+        public bool WasNullLayoutName { get; set; }
+        public bool WasNullPadding { get; set; }
+        public Stream? AssetStream { get; set; }
+        public int Priority { get; set; }
+    }
+
+    private sealed class TypographyOptions
+    {
+        public int FontSize { get; set; }
+    }
+
+    [Gap(5)]
+    [LayoutName("alpha")]
+    private sealed class BasicLayoutElement
+    {
+    }
+
+    [DerivedGap(nameof(CalculateGap))]
+    private sealed class DerivedGapElement
+    {
+        private int CalculateGap() => 42;
+    }
+
+    [DerivedGap(nameof(CalculateStaticGap))]
+    private sealed class DerivedStaticGapElement
+    {
+        private static int CalculateStaticGap() => 13;
+    }
+
+    private sealed class LayoutContext
+    {
+        private int CalculateColumns() => 77;
+
+        [DerivedColumns(nameof(CalculateColumns))]
+        public sealed class NestedElement
+        {
+        }
+    }
+
+    [LayoutName("base")]
+    [DerivedColumns(nameof(GetBaseColumns))]
+    private class InheritedLayoutBase
+    {
+        protected int GetBaseColumns() => 9;
+    }
+
+    [Gap(9)]
+    private sealed class InheritedLayoutElement : InheritedLayoutBase
+    {
+    }
+
+    [Gap(1)]
+    [IrrelevantDerived(nameof(MissingMethod))]
+    private sealed class IrrelevantAttributeElement
+    {
+        private static int MissingMethod() => 0;
+    }
+
+    [IndirectDerivedGap(nameof(GetIndirectGap))]
+    private sealed class IndirectDerivedGapElement
+    {
+        private int GetIndirectGap() => 100;
+    }
+
+    [DerivedLayoutName(nameof(GetNullLayoutName))]
+    private sealed class NullLayoutNameElement
+    {
+        private string? GetNullLayoutName() => null;
+    }
+
+    [DerivedPadding(nameof(GetPadding))]
+    private sealed class NullablePaddingElement
+    {
+        private int? GetPadding() => null;
+    }
+
+    [DerivedAssetStream(nameof(GetStream))]
+    private sealed class AssetStreamElement
+    {
+        private Stream GetStream() => new MemoryStream();
+    }
+
+    [DerivedGap("Missing")]
+    private sealed class MissingMethodElement
+    {
+    }
+
+    [DerivedGap(nameof(GetWithParameter))]
+    private sealed class ParameterMethodElement
+    {
+        private int GetWithParameter(int value) => value;
+    }
+
+    [DerivedGap(nameof(GetVoid))]
+    private sealed class VoidMethodElement
+    {
+        private void GetVoid()
+        {
+        }
+    }
+
+    [DerivedGap(nameof(GetNullableGap))]
+    private sealed class NullForNonNullableGapElement
+    {
+        private int? GetNullableGap() => null;
+    }
+
+    [DerivedGap(nameof(GetWrongType))]
+    private sealed class TypeMismatchElement
+    {
+        private string GetWrongType() => "nope";
+    }
+}
