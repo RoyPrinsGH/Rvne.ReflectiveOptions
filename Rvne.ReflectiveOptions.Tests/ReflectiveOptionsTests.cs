@@ -143,7 +143,7 @@ public sealed class ReflectiveOptionsTests
     {
         // A derivation method exists, but it has parameters. The builder requires a
         // parameterless method, so this should throw.
-        Assert.Throws<InvalidOperationException>(() => new ParameterMethodElement().CalculateOptions<LayoutOptions>());
+        Assert.Throws<MissingMethodException>(() => new ParameterMethodElement().CalculateOptions<LayoutOptions>());
     }
 
     [Fact]

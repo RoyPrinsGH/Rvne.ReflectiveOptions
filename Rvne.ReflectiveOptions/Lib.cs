@@ -63,8 +63,7 @@ internal static class UncachedBuilder
             binder: null, types: Type.EmptyTypes, modifiers: null)
             ?? throw new MissingMethodException(contextType.FullName, methodName);
 
-        if (derivationMethod.ReturnType == typeof(void)
-            || derivationMethod.GetParameters().Length != 0)
+        if (derivationMethod.ReturnType == typeof(void))
         {
             throw new InvalidOperationException($"Derivation method '{contextType.FullName}.{methodName}' must be parameterless and return a value.");
         }
