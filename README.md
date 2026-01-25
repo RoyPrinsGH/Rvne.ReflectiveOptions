@@ -1,6 +1,6 @@
 # Rvne.ReflectiveOptions
 
-ReflectiveOptions builds option objects from attributes on a source type. It is most useful for configuring complex trees of nested nodes (for example, a layout made of components that are themselves layouts). It supports:
+ReflectiveOptions builds option objects from attributes on a source type. It is most useful for configuring complex trees of nested nodes (for example, a CLI command tree). It supports:
 
 - Compile-time attributes that directly apply values to an options instance.
 - Derived attributes that compute values by invoking parameterless methods on a context object.
@@ -21,22 +21,22 @@ Implement `IOptionAttribute<TOptions>` for compile-time application:
 ```csharp
 using Rvne.ReflectiveOptions;
 
-public enum CarouselOrientation
+public sealed class CommandOptions
 {
-    Horizontal,
-    Vertical
-}
-
-public sealed class CarouselOptions
-{
-    public int Gap { get; set; }
-    public CarouselOrientation Orientation { get; set; }
+    public int TimeoutMs { get; set; } = 30_000;
+    public int Retries { get; set; }
 }
 
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
-public sealed class GapAttribute(int value) : Attribute, IOptionAttribute<CarouselOptions>
+public sealed class TimeoutAttribute(int value) : Attribute, IOptionAttribute<CommandOptions>
 {
-    public void Apply(CarouselOptions options) => options.Gap = value;
+    public void Apply(CommandOptions options) => options.TimeoutMs = value;
+}
+
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
+public sealed class RetriesAttribute(int value) : Attribute, IOptionAttribute<CommandOptions>
+{
+    public void Apply(CommandOptions options) => options.Retries = value;
 }
 ```
 
@@ -44,35 +44,41 @@ Use `DerivedOptionAttribute<TOptions, TResult>` for derived values:
 
 ```csharp
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
-public sealed class DerivedOrientationAttribute(string methodName)
-    : DerivedOptionAttribute<CarouselOptions, CarouselOrientation>(methodName)
+public sealed class DerivedTimeoutAttribute(string methodName)
+    : DerivedOptionAttribute<CommandOptions, int>(methodName)
 {
-    public override void Apply(CarouselOrientation derivationResult, CarouselOptions options)
-        => options.Orientation = derivationResult;
+    public override void Apply(int derivationResult, CommandOptions options)
+        => options.TimeoutMs = derivationResult;
 }
 ```
 
 ### 2) Annotate your source type
 
 ```csharp
-[Gap(8)]
-[DerivedOrientation(nameof(GetOrientation))]
-public sealed class Carousel
+public enum ExecutionProfile
 {
-    public bool IsNarrow { get; set; }
+    Local,
+    CI
+}
 
-    private CarouselOrientation GetOrientation()
-        => IsNarrow ? CarouselOrientation.Vertical : CarouselOrientation.Horizontal;
+[DerivedTimeout(nameof(ComputeTimeout))]
+[Retries(2)]
+public sealed class WarmCacheCommand
+{
+    public ExecutionProfile Profile { get; set; }
+
+    private int ComputeTimeout()
+        => Profile == ExecutionProfile.CI ? 90_000 : 20_000;
 }
 ```
 
 ### 3) Calculate options
 
 ```csharp
-var carousel = new Carousel { IsNarrow = true };
-var options = carousel.CalculateOptions<CarouselOptions>();
-// options.Gap == 8
-// options.Orientation == CarouselOrientation.Vertical
+var command = new WarmCacheCommand { Profile = ExecutionProfile.CI };
+var options = command.CalculateOptions<CommandOptions>();
+// options.TimeoutMs == 90_000
+// options.Retries == 2
 ```
 
 ## Derivation rules
@@ -87,25 +93,59 @@ var options = carousel.CalculateOptions<CarouselOptions>();
 You can provide a different object for method lookup by passing `derivationContext`:
 
 ```csharp
-public sealed class Dashboard
+public sealed class CliRoot
 {
-    public bool IsNarrow { get; set; }
+    public ExecutionProfile Profile { get; set; }
 
-    private CarouselOrientation ComputeOrientation()
-        => IsNarrow ? CarouselOrientation.Vertical : CarouselOrientation.Horizontal;
+    private int ComputeTimeout()
+        => Profile == ExecutionProfile.CI ? 90_000 : 20_000;
 
-    [DerivedOrientation(nameof(ComputeOrientation))]
-    public Carousel Carousel { get; } = new();
+    [DerivedTimeout(nameof(ComputeTimeout))]
+    public WarmCacheCommand Warm { get; } = new();
 }
 
-var dashboard = new Dashboard { IsNarrow = true };
-var options = dashboard.Carousel.CalculateOptions<CarouselOptions>(dashboard);
-// options.Orientation == CarouselOrientation.Vertical
+var root = new CliRoot { Profile = ExecutionProfile.CI };
+var options = root.Warm.CalculateOptions<CommandOptions>(root);
+// options.TimeoutMs == 90_000
 ```
 
 If `derivationContext` is `null` or omitted, the source object is used.
 
 Attributes are discovered with `inherit: true`, so base-class attributes are applied.
+
+## Mixing option domains
+
+You can map different option types to different parts of the same tree. For example, a container can carry command options while a child command carries output options:
+
+```csharp
+public sealed class OutputOptions
+{
+    public string Format { get; set; } = "text";
+}
+
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
+public sealed class FormatAttribute(string value) : Attribute, IOptionAttribute<OutputOptions>
+{
+    public void Apply(OutputOptions options) => options.Format = value;
+}
+
+[Retries(1)]
+public sealed class ExportGroup
+{
+    [Format("json")]
+    public ExportCommand Export { get; } = new();
+}
+
+public sealed class ExportCommand
+{
+}
+
+var group = new ExportGroup();
+var commandOptions = group.CalculateOptions<CommandOptions>();
+var outputOptions = group.Export.CalculateOptions<OutputOptions>();
+// commandOptions.Retries == 1
+// outputOptions.Format == "json"
+```
 
 ### Value types and member-level attributes
 
