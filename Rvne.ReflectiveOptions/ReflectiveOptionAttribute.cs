@@ -15,28 +15,22 @@ public abstract class ReflectiveOptionAttribute<TOptions, TValue>(string memberN
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        MemberInfo member = GetMemberInfo(typeof(TOptions), MemberName);
+        MemberInfo member = OptionMemberReflectionHelpers.FindMemberByName(typeof(TOptions), MemberName);
+
+        OptionMemberReflectionHelpers.ThrowIfNotAssignable(member, Value?.GetType());
 
         if (member is PropertyInfo property)
         {
-            if (!property.CanWrite || property.GetIndexParameters().Length != 0)
-            {
-                throw new InvalidOperationException(
-                    $"Member '{property.DeclaringType!.FullName}.{MemberName}' is not a writable non-indexed property.");
-            }
-
-            ValidateAssignable(property, property.PropertyType, Value);
             property.SetValue(options, Value);
-            return;
         }
-
-        if (member is FieldInfo field)
+        else if (member is FieldInfo field)
         {
-            ValidateAssignable(field, field.FieldType, Value);
             field.SetValue(options, Value);
-            return;
+        }
+        else
+        {
+            throw new InvalidOperationException($"Member '{typeof(TOptions).FullName}.{MemberName}' is not a field or property.");
         }
 
-        throw new InvalidOperationException($"Member '{typeof(TOptions).FullName}.{MemberName}' is not a field or property.");
     }
 }

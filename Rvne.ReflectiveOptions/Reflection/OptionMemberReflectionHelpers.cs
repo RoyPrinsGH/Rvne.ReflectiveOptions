@@ -11,7 +11,7 @@ internal static class OptionMemberReflectionHelpers
     private readonly static NullabilityInfoContext _nullabilityInfoContext = new();
 
     // TODO: Summary
-    internal static NullabilityInfo GetNullabilityInfo(MemberInfo fieldInfo) =>
+    private static NullabilityInfo GetNullabilityInfo(MemberInfo fieldInfo) =>
         fieldInfo switch
         {
             PropertyInfo property => _nullabilityInfoContext.Create(property),
@@ -23,6 +23,10 @@ internal static class OptionMemberReflectionHelpers
     // TODO: Summary
     internal static void ThrowIfNotAssignable(MemberInfo optionMember, Type? optionType)
     {
+        if (optionMember is PropertyInfo property && (!property.CanWrite || property.GetIndexParameters().Length != 0))
+            // TODO: Fill out exception
+            throw new InvalidOperationException($"");
+
         if (optionType is null)
         {
             ThrowIfNotNullAssignable(optionMember);
@@ -49,7 +53,7 @@ internal static class OptionMemberReflectionHelpers
     }
 
     // TODO: Summary + explanation what happens here w.r.t. technical details about nullability repr
-    internal static void ThrowIfNotNullAssignable(MemberInfo optionMember)
+    private static void ThrowIfNotNullAssignable(MemberInfo optionMember)
     {
         Type memberType = GetMemberType(optionMember);
 
@@ -99,7 +103,7 @@ internal static class OptionMemberReflectionHelpers
     }
 
     // TODO: Summary
-    internal static Type GetMemberType(MemberInfo optionMember)
+    private static Type GetMemberType(MemberInfo optionMember)
     {
         return optionMember switch
         {
