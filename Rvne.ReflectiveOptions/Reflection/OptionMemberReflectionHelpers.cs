@@ -2,7 +2,15 @@ using System.Reflection;
 
 namespace Rvne.ReflectiveOptions.Reflection;
 
-// TODO: Summary + explanation what we mean by "option member" and why we throw when we throw w.r.t. the spec of the library
+/// <summary>
+/// Helper methods for reflecting on option members and validating assignments.
+/// </summary>
+/// <remarks>
+/// In this library an "option member" is the field or property on the options type referenced by a
+/// <see cref="ReflectiveOptionAttribute{TOptions,TValue}"/>. We throw when that member is missing,
+/// not writable, or cannot accept the provided value (including nullability constraints) because those
+/// cases are invalid option definitions rather than recoverable runtime conditions.
+/// </remarks>
 internal static class OptionMemberReflectionHelpers
 {
     // Not entirely sure why this is not static, but reading the source
@@ -10,22 +18,26 @@ internal static class OptionMemberReflectionHelpers
     // to keep the allocations to a minimum
     private readonly static NullabilityInfoContext _nullabilityInfoContext = new();
 
-    // TODO: Summary
+    /// <summary>
+    /// Gets nullability metadata for a field or property member.
+    /// </summary>
     private static NullabilityInfo GetNullabilityInfo(MemberInfo fieldInfo) =>
         fieldInfo switch
         {
             PropertyInfo property => _nullabilityInfoContext.Create(property),
             FieldInfo field => _nullabilityInfoContext.Create(field),
-            // TODO: Fill this exception
-            _ => throw new InvalidOperationException("")
+            _ => throw new InvalidOperationException(
+                $"Member '{fieldInfo.DeclaringType!.FullName}.{fieldInfo.Name}' is not a field or property.")
         };
 
-    // TODO: Summary
+    /// <summary>
+    /// Ensures the provided option value type can be assigned to the option member.
+    /// </summary>
     internal static void ThrowIfNotAssignable(MemberInfo optionMember, Type? optionType)
     {
         if (optionMember is PropertyInfo property && (!property.CanWrite || property.GetIndexParameters().Length != 0))
-            // TODO: Fill out exception
-            throw new InvalidOperationException($"");
+            throw new InvalidOperationException(
+                $"Member '{property.DeclaringType!.FullName}.{property.Name}' is not a writable non-indexed property.");
 
         if (optionType is null)
         {
@@ -45,14 +57,19 @@ internal static class OptionMemberReflectionHelpers
                 return;
             }
 
-            // TODO: Specify is not about a mismatch, it's about assignability 
-            // and add more info
             throw new InvalidOperationException(
-                $"Option value type mismatch.");
+                $"Option value type '{optionType}' is not assignable to member '{optionMember.DeclaringType!.FullName}.{optionMember.Name}' of type '{memberType}'.");
         }
     }
 
-    // TODO: Summary + explanation what happens here w.r.t. technical details about nullability repr
+    /// <summary>
+    /// Ensures null can be assigned to the option member.
+    /// </summary>
+    /// <remarks>
+    /// For value types, nullability is represented by <see cref="Nullable{T}"/>. For reference types,
+    /// <see cref="NullabilityInfoContext"/> reads compiler-emitted nullability metadata and we use the
+    /// write state (or fall back to the read state) to determine if null is allowed.
+    /// </remarks>
     private static void ThrowIfNotNullAssignable(MemberInfo optionMember)
     {
         Type memberType = GetMemberType(optionMember);
@@ -75,7 +92,9 @@ internal static class OptionMemberReflectionHelpers
         }
     }
 
-    // TODO: Summary
+    /// <summary>
+    /// Finds a field or property by name on the type or its base types.
+    /// </summary>
     internal static MemberInfo FindMemberByName(Type optionType, string optionMemberName)
     {
         for (
@@ -102,7 +121,9 @@ internal static class OptionMemberReflectionHelpers
         throw new MissingMemberException(optionType.FullName, optionMemberName);
     }
 
-    // TODO: Summary
+    /// <summary>
+    /// Gets the field or property type for the option member.
+    /// </summary>
     private static Type GetMemberType(MemberInfo optionMember)
     {
         return optionMember switch
