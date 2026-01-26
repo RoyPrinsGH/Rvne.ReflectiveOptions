@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 
 namespace Rvne.ReflectiveOptions.Reflection;
@@ -11,7 +12,7 @@ namespace Rvne.ReflectiveOptions.Reflection;
 /// not writable, or cannot accept the provided value (including nullability constraints) because those
 /// cases are invalid option definitions rather than recoverable runtime conditions.
 /// </remarks>
-internal static class OptionMemberReflectionHelpers
+public static class OptionMemberReflectionHelpers
 {
     // Not entirely sure why this is not static, but reading the source
     // it seem to hold some sort of lookup cache, so I'm placing it behind a static class
@@ -21,7 +22,7 @@ internal static class OptionMemberReflectionHelpers
     /// <summary>
     /// Gets nullability metadata for a field or property member.
     /// </summary>
-    private static NullabilityInfo GetNullabilityInfo(MemberInfo fieldInfo) =>
+    internal static NullabilityInfo GetNullabilityInfo(MemberInfo fieldInfo) =>
         fieldInfo switch
         {
             PropertyInfo property => _nullabilityInfoContext.Create(property),
@@ -133,5 +134,32 @@ internal static class OptionMemberReflectionHelpers
             _ => throw new InvalidOperationException(
                 $"Member '{optionMember.DeclaringType!.FullName}.{optionMember.Name}' is not a field or property.")
         };
+    }
+
+    // TODO: Summary
+    public static void Apply<TOptions, TValue>(TOptions options, string optionMemberName, TValue value)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        if (string.IsNullOrWhiteSpace(optionMemberName))
+            // TODO: Fill this exception
+            throw new MissingMethodException("");
+
+        MemberInfo member = FindMemberByName(typeof(TOptions), optionMemberName);
+
+        ThrowIfNotAssignable(member, typeof(TValue));
+
+        if (member is PropertyInfo property)
+        {
+            property.SetValue(options, value);
+        }
+        else if (member is FieldInfo field)
+        {
+            field.SetValue(options, value);
+        }
+        else
+        {
+            throw new InvalidOperationException($"Member '{typeof(TOptions).FullName}.{optionMemberName}' is not a field or property.");
+        }
     }
 }

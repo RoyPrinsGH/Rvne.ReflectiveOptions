@@ -13,7 +13,7 @@ public sealed class ReflectiveOptionsTests
         // BasicLayoutElement is decorated with compile-time attributes that directly implement
         // IOptionAttribute<LayoutOptions>. CalculateOptions should apply them without any
         // derivation step, producing a preconfigured LayoutOptions instance.
-        var options = new BasicLayoutElement().CalculateOptions<LayoutOptions>();
+        var options = new BasicLayoutElement().GetOptions<LayoutOptions>();
 
         Assert.Equal(5, options.Gap);
         Assert.Equal("alpha", options.LayoutName);
@@ -24,7 +24,7 @@ public sealed class ReflectiveOptionsTests
     {
         // The DerivedGap attribute points at a private instance method on the element.
         // Reflection should invoke that method on the source instance and use its result.
-        var options = new DerivedGapElement().CalculateOptions<LayoutOptions>();
+        var options = new DerivedGapElement().GetOptions<LayoutOptions>();
 
         Assert.Equal(42, options.Gap);
     }
@@ -34,7 +34,7 @@ public sealed class ReflectiveOptionsTests
     {
         // The derived gap method is static here. The builder should still find it and
         // invoke it without an instance, then assign the returned value to the option.
-        var options = new DerivedStaticGapElement().CalculateOptions<LayoutOptions>();
+        var options = new DerivedStaticGapElement().GetOptions<LayoutOptions>();
 
         Assert.Equal(13, options.Gap);
     }
@@ -46,7 +46,7 @@ public sealed class ReflectiveOptionsTests
         // exists on the parent context. Using CalculateMemberOptions should route the
         // reflective lookup to that context type.
         var parent = new LayoutContext();
-        var options = parent.CalculateMemberOptions<LayoutOptions>(nameof(LayoutContext.Nested));
+        var options = parent.GetMemberOptions<LayoutOptions>(nameof(LayoutContext.Nested));
 
         Assert.Equal(77, options.Columns);
     }
@@ -58,7 +58,7 @@ public sealed class ReflectiveOptionsTests
         // container is used as the derivation context, those member attributes should apply.
         var container = new ComponentContainer();
 
-        var options = container.CalculateMemberOptions<LayoutOptions>(nameof(ComponentContainer.DemoButton));
+        var options = container.GetMemberOptions<LayoutOptions>(nameof(ComponentContainer.DemoButton));
 
         Assert.Equal(10, options.Gap);
     }
@@ -69,7 +69,7 @@ public sealed class ReflectiveOptionsTests
         // Member-level attributes are applied by name, so value type members work too.
         var container = new StructContainer();
 
-        var options = container.CalculateMemberOptions<LayoutOptions>(nameof(StructContainer.StructButton));
+        var options = container.GetMemberOptions<LayoutOptions>(nameof(StructContainer.StructButton));
 
         Assert.Equal(22, options.Gap);
     }
@@ -81,7 +81,7 @@ public sealed class ReflectiveOptionsTests
         // method lookup.
         var source = new DerivedGapElement();
 
-        var options = source.CalculateOptions<LayoutOptions>();
+        var options = source.GetOptions<LayoutOptions>();
 
         Assert.Equal(42, options.Gap);
     }
@@ -94,7 +94,7 @@ public sealed class ReflectiveOptionsTests
         var source = new ExplicitContextElement();
         IColumnsProvider derivationContext = new ColumnsProvider();
 
-        var options = source.CalculateOptions<LayoutOptions>(derivationContext);
+        var options = source.GetOptions<LayoutOptions>(derivationContext);
 
         Assert.Equal(88, options.Columns);
         Assert.Equal(3, options.Gap);
@@ -104,21 +104,21 @@ public sealed class ReflectiveOptionsTests
     public void CalculateOptions_Throws_When_Source_Is_Null()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            ReflectiveOptionsExtensions.CalculateOptions<LayoutOptions>(null!));
+            ReflectiveOptionsExtensions.GetOptions<LayoutOptions>(null!));
     }
 
     [Fact]
     public void CalculateOptions_Throws_When_DerivationContext_Is_Null()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            new ExplicitContextElement().CalculateOptions<LayoutOptions>(null!));
+            new ExplicitContextElement().GetOptions<LayoutOptions>(null!));
     }
 
     [Fact]
     public void CalculateMemberOptions_Throws_When_DerivationContext_Is_Null()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            ReflectiveOptionsExtensions.CalculateMemberOptions<LayoutOptions>(null!, nameof(LayoutContext.Nested)));
+            ReflectiveOptionsExtensions.GetMemberOptions<LayoutOptions>(null!, nameof(LayoutContext.Nested)));
     }
 
     [Fact]
@@ -126,7 +126,7 @@ public sealed class ReflectiveOptionsTests
     {
         var parent = new LayoutContext();
 
-        Assert.Throws<ArgumentException>(() => parent.CalculateMemberOptions<LayoutOptions>(string.Empty));
+        Assert.Throws<ArgumentException>(() => parent.GetMemberOptions<LayoutOptions>(string.Empty));
     }
 
     [Fact]
@@ -134,7 +134,7 @@ public sealed class ReflectiveOptionsTests
     {
         var parent = new LayoutContext();
 
-        Assert.Throws<MissingMemberException>(() => parent.CalculateMemberOptions<LayoutOptions>("Missing"));
+        Assert.Throws<MissingMemberException>(() => parent.GetMemberOptions<LayoutOptions>("Missing"));
     }
 
     [Fact]
@@ -142,7 +142,7 @@ public sealed class ReflectiveOptionsTests
     {
         var parent = new WriteOnlyContainer();
 
-        Assert.Throws<InvalidOperationException>(() => parent.CalculateMemberOptions<LayoutOptions>(nameof(WriteOnlyContainer.WriteOnly)));
+        Assert.Throws<InvalidOperationException>(() => parent.GetMemberOptions<LayoutOptions>(nameof(WriteOnlyContainer.WriteOnly)));
     }
 
     [Fact]
@@ -150,7 +150,7 @@ public sealed class ReflectiveOptionsTests
     {
         var parent = new IndexedContainer();
 
-        Assert.Throws<InvalidOperationException>(() => parent.CalculateMemberOptions<LayoutOptions>("Item"));
+        Assert.Throws<InvalidOperationException>(() => parent.GetMemberOptions<LayoutOptions>("Item"));
     }
 
     [Fact]
@@ -158,7 +158,7 @@ public sealed class ReflectiveOptionsTests
     {
         var container = new FieldContainer();
 
-        var options = container.CalculateMemberOptions<LayoutOptions>(nameof(FieldContainer.FieldButton));
+        var options = container.GetMemberOptions<LayoutOptions>(nameof(FieldContainer.FieldButton));
 
         Assert.Equal(17, options.Gap);
     }
@@ -169,7 +169,7 @@ public sealed class ReflectiveOptionsTests
         // The base class provides attributes (including a derived attribute that calls a
         // protected method). The derived class should inherit and apply those attributes,
         // then combine them with its own compile-time gap override.
-        var options = new InheritedLayoutElement().CalculateOptions<LayoutOptions>();
+        var options = new InheritedLayoutElement().GetOptions<LayoutOptions>();
 
         Assert.Equal("base", options.LayoutName);
         Assert.Equal(9, options.Columns);
@@ -181,7 +181,7 @@ public sealed class ReflectiveOptionsTests
     {
         // This element includes an attribute targeting TypographyOptions. Since we're
         // calculating LayoutOptions, that attribute should be ignored entirely.
-        var options = new IrrelevantAttributeElement().CalculateOptions<LayoutOptions>();
+        var options = new IrrelevantAttributeElement().GetOptions<LayoutOptions>();
 
         Assert.Equal(1, options.Gap);
     }
@@ -192,7 +192,7 @@ public sealed class ReflectiveOptionsTests
         // The attribute inherits from an intermediate base class which in turn inherits
         // DerivedOptionAttribute. The builder should walk base types to detect the generic
         // DerivedOptionAttribute and still apply the derivation.
-        var options = new IndirectDerivedGapElement().CalculateOptions<LayoutOptions>();
+        var options = new IndirectDerivedGapElement().GetOptions<LayoutOptions>();
 
         Assert.Equal(100, options.Gap);
     }
@@ -202,7 +202,7 @@ public sealed class ReflectiveOptionsTests
     {
         // The derivation method returns null for a reference type (string?). This is a
         // valid result and should flow through without an exception.
-        var options = new NullLayoutNameElement().CalculateOptions<LayoutOptions>();
+        var options = new NullLayoutNameElement().GetOptions<LayoutOptions>();
 
         Assert.True(options.WasNullLayoutName);
     }
@@ -211,7 +211,7 @@ public sealed class ReflectiveOptionsTests
     public void CalculateOptions_Throws_When_Null_Returned_For_NonNullable_ReferenceType_Result()
     {
         // The derivation method claims a non-nullable reference type but returns null.
-        Assert.Throws<InvalidOperationException>(() => new NonNullableLayoutNameElement().CalculateOptions<LayoutOptions>());
+        Assert.Throws<InvalidOperationException>(() => new NonNullableLayoutNameElement().GetOptions<LayoutOptions>());
     }
 
     [Fact]
@@ -219,7 +219,7 @@ public sealed class ReflectiveOptionsTests
     {
         // The derivation method returns null for a Nullable<int>. This should be accepted
         // and stored as null without throwing.
-        var options = new NullablePaddingElement().CalculateOptions<LayoutOptions>();
+        var options = new NullablePaddingElement().GetOptions<LayoutOptions>();
 
         Assert.True(options.WasNullPadding);
         Assert.Null(options.Padding);
@@ -230,7 +230,7 @@ public sealed class ReflectiveOptionsTests
     {
         // The attribute expects a Stream, but the method returns a MemoryStream. Because
         // MemoryStream is assignable to Stream, the result should be accepted.
-        var options = new AssetStreamElement().CalculateOptions<LayoutOptions>();
+        var options = new AssetStreamElement().GetOptions<LayoutOptions>();
 
         Assert.IsType<MemoryStream>(options.AssetStream);
     }
@@ -240,7 +240,7 @@ public sealed class ReflectiveOptionsTests
     {
         // The attribute points at a method name that doesn't exist on the context type,
         // so reflection should fail with a MissingMethodException.
-        Assert.Throws<MissingMethodException>(() => new MissingMethodElement().CalculateOptions<LayoutOptions>());
+        Assert.Throws<MissingMethodException>(() => new MissingMethodElement().GetOptions<LayoutOptions>());
     }
 
     [Fact]
@@ -248,7 +248,7 @@ public sealed class ReflectiveOptionsTests
     {
         // A derivation method exists, but it has parameters. The builder requires a
         // parameterless method, so this should throw.
-        Assert.Throws<MissingMethodException>(() => new ParameterMethodElement().CalculateOptions<LayoutOptions>());
+        Assert.Throws<MissingMethodException>(() => new ParameterMethodElement().GetOptions<LayoutOptions>());
     }
 
     [Fact]
@@ -256,7 +256,7 @@ public sealed class ReflectiveOptionsTests
     {
         // A derivation method that returns void is invalid because the builder needs
         // a value to apply. Expect an InvalidOperationException.
-        Assert.Throws<InvalidOperationException>(() => new VoidMethodElement().CalculateOptions<LayoutOptions>());
+        Assert.Throws<InvalidOperationException>(() => new VoidMethodElement().GetOptions<LayoutOptions>());
     }
 
     [Fact]
@@ -264,7 +264,7 @@ public sealed class ReflectiveOptionsTests
     {
         // The attribute expects an int, but the method returns null. Null is not valid
         // for non-nullable value types, so this should throw.
-        Assert.Throws<InvalidOperationException>(() => new NullForNonNullableGapElement().CalculateOptions<LayoutOptions>());
+        Assert.Throws<InvalidOperationException>(() => new NullForNonNullableGapElement().GetOptions<LayoutOptions>());
     }
 
     [Fact]
@@ -272,7 +272,7 @@ public sealed class ReflectiveOptionsTests
     {
         // The attribute expects an int, but the method returns a string. The result type
         // is not assignable, so the builder should throw.
-        Assert.Throws<InvalidOperationException>(() => new TypeMismatchElement().CalculateOptions<LayoutOptions>());
+        Assert.Throws<InvalidOperationException>(() => new TypeMismatchElement().GetOptions<LayoutOptions>());
     }
 
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]

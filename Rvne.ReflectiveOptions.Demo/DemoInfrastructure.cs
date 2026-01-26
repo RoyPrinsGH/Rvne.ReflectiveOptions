@@ -6,7 +6,7 @@ internal static class CommandTree
 {
     public static ResolvedCommand BuildResolvedTree(CommandNode node)
     {
-        var options = node.CalculateOptions<CommandOptions>();
+        var options = node.GetOptions<CommandOptions>();
         var resolved = new ResolvedCommand(node.Name, options);
 
         foreach (var child in node.Children)

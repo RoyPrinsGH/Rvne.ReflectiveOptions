@@ -1,29 +1,19 @@
 ﻿using System.Reflection;
+using Rvne.ReflectiveOptions.Attributes;
 
 namespace Rvne.ReflectiveOptions;
 
-public interface IOptionAttribute<TOptions>
-{
-    void Apply(TOptions options);
-}
-
-public abstract class DerivedOptionAttribute<TOptions, TDerivationResult>(string derivationMethodName) : Attribute
-{
-    public string DerivationMethodName { get; } = derivationMethodName;
-    public abstract void Apply(TDerivationResult derivationResult, TOptions options);
-}
-
 public static class ReflectiveOptionsExtensions
 {
-    public static TOptions CalculateOptions<TOptions>(this object source)
+    public static TOptions GetOptions<TOptions>(this object source)
         where TOptions : new()
     {
         ArgumentNullException.ThrowIfNull(source);
 
-        return source.CalculateOptions<TOptions>(source);
+        return source.GetOptions<TOptions>(source);
     }
 
-    public static TOptions CalculateOptions<TOptions>(this object source, object derivationContext)
+    public static TOptions GetOptions<TOptions>(this object source, object derivationContext)
         where TOptions : new()
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -33,7 +23,7 @@ public static class ReflectiveOptionsExtensions
         return UncachedBuilder.BuildFrom<TOptions>(sourceAttributes, derivationContext);
     }
 
-    public static TOptions CalculateMemberOptions<TOptions>(this object derivationContext, string memberName)
+    public static TOptions GetMemberOptions<TOptions>(this object derivationContext, string memberName)
         where TOptions : new()
     {
         ArgumentNullException.ThrowIfNull(derivationContext);
@@ -86,7 +76,7 @@ internal static class UncachedBuilder
         foreach (Attribute attr in customAttributes)
         {
             // Check if it's a compile-time only application
-            if (attr is IOptionAttribute<TOptions> optionAttribute)
+            if (attr is IOptionMiddleware<TOptions> optionAttribute)
             {
                 optionAttribute.Apply(options);
 
