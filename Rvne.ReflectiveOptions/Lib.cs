@@ -18,37 +18,30 @@ public static class ReflectiveOptionsExtensions
     public static TOptions CalculateOptions<TOptions>(this object source)
         where TOptions : new()
     {
-        return UncachedBuilder.BuildFrom<TOptions>(source, source);
+        return source.CalculateOptions<TOptions>(source);
     }
 
     public static TOptions CalculateOptions<TOptions>(this object source, object derivationContext)
         where TOptions : new()
     {
-        return UncachedBuilder.BuildFrom<TOptions>(source, derivationContext);
+        IEnumerable<Attribute> sourceAttributes = source.GetType().GetCustomAttributes(inherit: true).Cast<Attribute>();
+        return UncachedBuilder.BuildFrom<TOptions>(sourceAttributes, derivationContext);
     }
 
-    public static TOptions CalculateOptionsFor<TOptions>(this object derivationContext, string memberName)
+    public static TOptions CalculateMemberOptions<TOptions>(this object derivationContext, string memberName)
         where TOptions : new()
     {
-        ArgumentNullException.ThrowIfNull(derivationContext);
-
         if (string.IsNullOrWhiteSpace(memberName))
             throw new ArgumentException("Member name must be provided.", nameof(memberName));
 
-        object? source = GetMemberValue(derivationContext, memberName, out MemberInfo? memberInfo);
-        if (source is null)
-        {
-            string memberDisplay = memberInfo is null
-                ? memberName
-                : $"{memberInfo.DeclaringType?.FullName}.{memberName}";
-            throw new InvalidOperationException($"Member '{memberDisplay}' is null.");
-        }
+        IEnumerable<Attribute> memberAttributes = GetMemberInfo(derivationContext, memberName)
+            .GetCustomAttributes(inherit: true)
+            .Cast<Attribute>();
 
-        IEnumerable<Attribute> memberAttributes = memberInfo!.GetCustomAttributes(inherit: true).Cast<Attribute>();
-        return UncachedBuilder.BuildFrom<TOptions>(source, derivationContext, memberAttributes);
+        return UncachedBuilder.BuildFrom<TOptions>(memberAttributes, derivationContext);
     }
 
-    private static object? GetMemberValue(object derivationContext, string memberName, out MemberInfo? memberInfo)
+    private static MemberInfo GetMemberInfo(object derivationContext, string memberName)
     {
         for (var t = derivationContext.GetType(); t is not null && t != typeof(object); t = t.BaseType)
         {
@@ -60,36 +53,30 @@ public static class ReflectiveOptionsExtensions
                 if (!property.CanRead || property.GetIndexParameters().Length != 0)
                     throw new InvalidOperationException($"Member '{t.FullName}.{memberName}' is not a readable non-indexed property.");
 
-                memberInfo = property;
-                return property.GetValue(derivationContext);
+                return property;
             }
 
             var field = t.GetField(memberName, flags);
             if (field is not null)
             {
-                memberInfo = field;
-                return field.GetValue(derivationContext);
+                return field;
             }
         }
 
-        memberInfo = null;
         throw new MissingMemberException(derivationContext.GetType().FullName, memberName);
     }
 }
 
 internal static class UncachedBuilder
 {
-    public static TOptions BuildFrom<TOptions>(
-        object source,
-        object derivationContext,
-        IEnumerable<Attribute>? contextMemberAttributes = null) where TOptions : new()
+    private static readonly NullabilityInfoContext NullabilityContext = new();
+
+    public static TOptions BuildFrom<TOptions>(IEnumerable<Attribute> customAttributes, object derivationContext)
+        where TOptions : new()
     {
         var options = new TOptions();
 
-        IEnumerable<Attribute> sourceAttributes = source.GetType().GetCustomAttributes(inherit: true).Cast<Attribute>();
-        IEnumerable<Attribute> memberAttributes = contextMemberAttributes ?? Enumerable.Empty<Attribute>();
-
-        foreach (Attribute attr in sourceAttributes.Concat(memberAttributes))
+        foreach (Attribute attr in customAttributes)
         {
             // Check if it's a compile-time only application
             if (attr is IOptionAttribute<TOptions> optionAttribute)
@@ -132,11 +119,21 @@ internal static class UncachedBuilder
             ? derivationMethod.Invoke(null, null)
             : derivationMethod.Invoke(context, null);
 
-        if (opaqueDerivationResult is null
-            && resultType.IsValueType
-            && Nullable.GetUnderlyingType(resultType) is null)
+        if (opaqueDerivationResult is null)
         {
-            throw new InvalidOperationException($"Derivation method '{contextType.FullName}.{methodName}' returned null for non-nullable '{resultType}'.");
+            if (resultType.IsValueType && Nullable.GetUnderlyingType(resultType) is null)
+            {
+                throw new InvalidOperationException($"Derivation method '{contextType.FullName}.{methodName}' returned null for non-nullable '{resultType}'.");
+            }
+
+            if (!resultType.IsValueType)
+            {
+                NullabilityInfo nullability = NullabilityContext.Create(derivationMethod.ReturnParameter);
+                if (nullability.ReadState == NullabilityState.NotNull)
+                {
+                    throw new InvalidOperationException($"Derivation method '{contextType.FullName}.{methodName}' returned null for non-nullable '{resultType}'.");
+                }
+            }
         }
 
         if (opaqueDerivationResult is not null

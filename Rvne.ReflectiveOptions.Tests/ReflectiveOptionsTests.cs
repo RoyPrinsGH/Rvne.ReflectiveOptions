@@ -46,7 +46,7 @@ public sealed class ReflectiveOptionsTests
         // exists on the parent context. Using CalculateOptionsFor should route the
         // reflective lookup to that context type rather than the nested element.
         var parent = new LayoutContext();
-        var options = parent.CalculateOptionsFor<LayoutOptions>(nameof(LayoutContext.Nested));
+        var options = parent.CalculateMemberOptions<LayoutOptions>(nameof(LayoutContext.Nested));
 
         Assert.Equal(77, options.Columns);
     }
@@ -58,7 +58,7 @@ public sealed class ReflectiveOptionsTests
         // container is used as the derivation context, those member attributes should apply.
         var container = new ComponentContainer();
 
-        var options = container.CalculateOptionsFor<LayoutOptions>(nameof(ComponentContainer.DemoButton));
+        var options = container.CalculateMemberOptions<LayoutOptions>(nameof(ComponentContainer.DemoButton));
 
         Assert.Equal(10, options.Gap);
     }
@@ -69,7 +69,7 @@ public sealed class ReflectiveOptionsTests
         // Member-level attributes are applied by name, so value type members work too.
         var container = new StructContainer();
 
-        var options = container.CalculateOptionsFor<LayoutOptions>(nameof(StructContainer.StructButton));
+        var options = container.CalculateMemberOptions<LayoutOptions>(nameof(StructContainer.StructButton));
 
         Assert.Equal(22, options.Gap);
     }
@@ -149,6 +149,13 @@ public sealed class ReflectiveOptionsTests
         var options = new NullLayoutNameElement().CalculateOptions<LayoutOptions>();
 
         Assert.True(options.WasNullLayoutName);
+    }
+
+    [Fact]
+    public void CalculateOptions_Throws_When_Null_Returned_For_NonNullable_ReferenceType_Result()
+    {
+        // The derivation method claims a non-nullable reference type but returns null.
+        Assert.Throws<InvalidOperationException>(() => new NonNullableLayoutNameElement().CalculateOptions<LayoutOptions>());
     }
 
     [Fact]
@@ -251,6 +258,13 @@ public sealed class ReflectiveOptionsTests
     {
         public override void Apply(string? derivationResult, LayoutOptions options) =>
             options.WasNullLayoutName = derivationResult is null;
+    }
+
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+    private sealed class DerivedLayoutNameNonNullAttribute(string methodName) : DerivedOptionAttribute<LayoutOptions, string>(methodName)
+    {
+        public override void Apply(string derivationResult, LayoutOptions options) =>
+            options.LayoutName = derivationResult;
     }
 
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
@@ -387,6 +401,12 @@ public sealed class ReflectiveOptionsTests
     private sealed class NullLayoutNameElement
     {
         private string? GetNullLayoutName() => null;
+    }
+
+    [DerivedLayoutNameNonNull(nameof(GetLayoutName))]
+    private sealed class NonNullableLayoutNameElement
+    {
+        private string GetLayoutName() => null!;
     }
 
     [DerivedPadding(nameof(GetPadding))]
