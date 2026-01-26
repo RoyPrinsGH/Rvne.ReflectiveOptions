@@ -18,12 +18,17 @@ public static class ReflectiveOptionsExtensions
     public static TOptions CalculateOptions<TOptions>(this object source)
         where TOptions : new()
     {
+        ArgumentNullException.ThrowIfNull(source);
+
         return source.CalculateOptions<TOptions>(source);
     }
 
     public static TOptions CalculateOptions<TOptions>(this object source, object derivationContext)
         where TOptions : new()
     {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(derivationContext);
+
         IEnumerable<Attribute> sourceAttributes = source.GetType().GetCustomAttributes(inherit: true).Cast<Attribute>();
         return UncachedBuilder.BuildFrom<TOptions>(sourceAttributes, derivationContext);
     }
@@ -31,6 +36,8 @@ public static class ReflectiveOptionsExtensions
     public static TOptions CalculateMemberOptions<TOptions>(this object derivationContext, string memberName)
         where TOptions : new()
     {
+        ArgumentNullException.ThrowIfNull(derivationContext);
+
         if (string.IsNullOrWhiteSpace(memberName))
             throw new ArgumentException("Member name must be provided.", nameof(memberName));
 
