@@ -15,24 +15,75 @@ public abstract class DerivedOptionAttribute<TOptions, TDerivationResult>(string
 
 public static class ReflectiveOptionsExtensions
 {
-    public static TOptions CalculateOptions<TOptions>(this object source, object? derivationContext = null)
+    public static TOptions CalculateOptions<TOptions>(this object source)
         where TOptions : new()
     {
-        derivationContext ??= source;
-        return UncachedBuilder.BuildFrom<TOptions>(source, derivationContext);
+        ArgumentNullException.ThrowIfNull(source);
+
+        return source.CalculateOptions<TOptions>(source);
+    }
+
+    public static TOptions CalculateOptions<TOptions>(this object source, object derivationContext)
+        where TOptions : new()
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(derivationContext);
+
+        IEnumerable<Attribute> sourceAttributes = source.GetType().GetCustomAttributes(inherit: true).Cast<Attribute>();
+        return UncachedBuilder.BuildFrom<TOptions>(sourceAttributes, derivationContext);
+    }
+
+    public static TOptions CalculateMemberOptions<TOptions>(this object derivationContext, string memberName)
+        where TOptions : new()
+    {
+        ArgumentNullException.ThrowIfNull(derivationContext);
+
+        if (string.IsNullOrWhiteSpace(memberName))
+            throw new ArgumentException("Member name must be provided.", nameof(memberName));
+
+        IEnumerable<Attribute> memberAttributes = GetMemberInfo(derivationContext, memberName)
+            .GetCustomAttributes(inherit: true)
+            .Cast<Attribute>();
+
+        return UncachedBuilder.BuildFrom<TOptions>(memberAttributes, derivationContext);
+    }
+
+    private static MemberInfo GetMemberInfo(object derivationContext, string memberName)
+    {
+        for (var t = derivationContext.GetType(); t is not null && t != typeof(object); t = t.BaseType)
+        {
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+
+            var property = t.GetProperty(memberName, flags);
+            if (property is not null)
+            {
+                if (!property.CanRead || property.GetIndexParameters().Length != 0)
+                    throw new InvalidOperationException($"Member '{t.FullName}.{memberName}' is not a readable non-indexed property.");
+
+                return property;
+            }
+
+            var field = t.GetField(memberName, flags);
+            if (field is not null)
+            {
+                return field;
+            }
+        }
+
+        throw new MissingMemberException(derivationContext.GetType().FullName, memberName);
     }
 }
 
 internal static class UncachedBuilder
 {
-    public static TOptions BuildFrom<TOptions>(object source, object derivationContext) where TOptions : new()
+    private static readonly NullabilityInfoContext NullabilityContext = new();
+
+    public static TOptions BuildFrom<TOptions>(IEnumerable<Attribute> customAttributes, object derivationContext)
+        where TOptions : new()
     {
         var options = new TOptions();
 
-        IEnumerable<Attribute> sourceAttributes = source.GetType().GetCustomAttributes(inherit: true).Cast<Attribute>();
-        IEnumerable<Attribute> contextMemberAttributes = GetContextMemberAttributesFor(source, derivationContext);
-
-        foreach (Attribute attr in sourceAttributes.Concat(contextMemberAttributes))
+        foreach (Attribute attr in customAttributes)
         {
             // Check if it's a compile-time only application
             if (attr is IOptionAttribute<TOptions> optionAttribute)
@@ -57,48 +108,6 @@ internal static class UncachedBuilder
         return options;
     }
 
-    private static IEnumerable<Attribute> GetContextMemberAttributesFor(object source, object derivationContext)
-    {
-        Type sourceType = source.GetType();
-
-        // We need some way of getting the appropriate PropertyInfo or FieldInfo
-        // and the easiest way of getting it is via ReferenceEquals - which doesn't exist on ValueTypes
-        // 
-        // Think about it: If a container has two fields both of the same value type, 
-        // and I call .CalculateOptions<> on one of them,
-        // how could we determine which of the two fields is actually the one being requested for its options?
-        if (sourceType.IsValueType)
-            yield break;
-
-        for (var t = derivationContext.GetType(); t is not null && t != typeof(object); t = t.BaseType)
-        {
-            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
-
-            foreach (var property in t.GetProperties(flags))
-            {
-                if (!property.CanRead || property.GetIndexParameters().Length != 0)
-                    continue;
-
-                object? value = property.GetValue(derivationContext);
-                if (value is not null && ReferenceEquals(value, source))
-                {
-                    foreach (Attribute attr in property.GetCustomAttributes(inherit: true).Cast<Attribute>())
-                        yield return attr;
-                }
-            }
-
-            foreach (var field in t.GetFields(flags))
-            {
-                object? value = field.GetValue(derivationContext);
-                if (value is not null && ReferenceEquals(value, source))
-                {
-                    foreach (Attribute attr in field.GetCustomAttributes(inherit: true).Cast<Attribute>())
-                        yield return attr;
-                }
-            }
-        }
-    }
-
     private static object? CallDerivationMethod(string methodName, Type resultType, object context)
     {
         Type contextType = context.GetType();
@@ -117,11 +126,21 @@ internal static class UncachedBuilder
             ? derivationMethod.Invoke(null, null)
             : derivationMethod.Invoke(context, null);
 
-        if (opaqueDerivationResult is null
-            && resultType.IsValueType
-            && Nullable.GetUnderlyingType(resultType) is null)
+        if (opaqueDerivationResult is null)
         {
-            throw new InvalidOperationException($"Derivation method '{contextType.FullName}.{methodName}' returned null for non-nullable '{resultType}'.");
+            if (resultType.IsValueType && Nullable.GetUnderlyingType(resultType) is null)
+            {
+                throw new InvalidOperationException($"Derivation method '{contextType.FullName}.{methodName}' returned null for non-nullable '{resultType}'.");
+            }
+
+            if (!resultType.IsValueType)
+            {
+                NullabilityInfo nullability = NullabilityContext.Create(derivationMethod.ReturnParameter);
+                if (nullability.ReadState == NullabilityState.NotNull)
+                {
+                    throw new InvalidOperationException($"Derivation method '{contextType.FullName}.{methodName}' returned null for non-nullable '{resultType}'.");
+                }
+            }
         }
 
         if (opaqueDerivationResult is not null

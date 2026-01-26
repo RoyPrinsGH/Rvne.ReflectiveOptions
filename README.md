@@ -86,11 +86,12 @@ var options = command.CalculateOptions<CommandOptions>();
 - The derivation method name is provided by the attribute and looked up via reflection.
 - Methods must be parameterless and return a value (non-void).
 - If the method returns `null` for a non-nullable value type, an exception is thrown.
+- If the method returns `null` for a non-nullable reference type, an exception is thrown.
 - The returned value must be assignable to the result type specified on the attribute.
 
 ## Derivation context
 
-You can provide a different object for method lookup by passing `derivationContext`:
+You can provide a parent object for method lookup by using `CalculateMemberOptions` on the context:
 
 ```csharp
 public sealed class CliRoot
@@ -105,11 +106,18 @@ public sealed class CliRoot
 }
 
 var root = new CliRoot { Profile = ExecutionProfile.CI };
-var options = root.Warm.CalculateOptions<CommandOptions>(root);
+var options = root.CalculateMemberOptions<CommandOptions>(nameof(CliRoot.Warm));
 // options.TimeoutMs == 90_000
 ```
 
-If `derivationContext` is `null` or omitted, the source object is used.
+If you already have the source instance and want to override the derivation context, you can pass it directly:
+
+```csharp
+var command = new WarmCacheCommand { Profile = ExecutionProfile.Local };
+var context = new CliRoot { Profile = ExecutionProfile.CI };
+var options = command.CalculateOptions<CommandOptions>(context);
+// options.TimeoutMs == 90_000
+```
 
 Attributes are discovered with `inherit: true`, so base-class attributes are applied.
 
@@ -142,11 +150,11 @@ public sealed class ExportCommand
 
 var group = new ExportGroup();
 var commandOptions = group.CalculateOptions<CommandOptions>();
-var outputOptions = group.Export.CalculateOptions<OutputOptions>();
+var outputOptions = group.CalculateMemberOptions<OutputOptions>(nameof(ExportGroup.Export));
 // commandOptions.Retries == 1
 // outputOptions.Format == "json"
 ```
 
-### Value types and member-level attributes
+### Member-level attributes
 
-Member-level attributes (on context properties/fields that point at the source object) rely on reference identity. That means they only work for reference types. For value types, there is no reliable way to tell which member you intended if multiple fields/properties share the same value. If you need member-level attributes, use reference types for those components.
+`CalculateMemberOptions` applies only the attributes defined on the named member (property/field). It does not read attributes from the member's value type. Use `CalculateOptions` on the value itself if you need the value's own attributes applied.

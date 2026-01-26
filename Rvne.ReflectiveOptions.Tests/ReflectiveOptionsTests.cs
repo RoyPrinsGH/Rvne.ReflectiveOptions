@@ -40,41 +40,127 @@ public sealed class ReflectiveOptionsTests
     }
 
     [Fact]
-    public void CalculateOptions_Uses_DerivationContext_When_Provided()
+    public void CalculateMemberOptions_Uses_DerivationContext_When_Provided()
     {
         // The nested element is decorated with a derived columns attribute whose method
-        // exists on the parent context. Passing the parent as derivationContext should
-        // route the reflective lookup to that context type rather than the nested element.
+        // exists on the parent context. Using CalculateMemberOptions should route the
+        // reflective lookup to that context type.
         var parent = new LayoutContext();
-        var child = new LayoutContext.NestedElement();
-
-        var options = child.CalculateOptions<LayoutOptions>(parent);
+        var options = parent.CalculateMemberOptions<LayoutOptions>(nameof(LayoutContext.Nested));
 
         Assert.Equal(77, options.Columns);
     }
 
     [Fact]
-    public void CalculateOptions_Applies_Attributes_From_Context_Member()
+    public void CalculateMemberOptions_Applies_Attributes_From_Context_Member()
     {
         // A component can be decorated at the member level in a parent container. When the
-        // container is used as derivationContext, those member attributes should apply.
+        // container is used as the derivation context, those member attributes should apply.
         var container = new ComponentContainer();
 
-        var options = container.DemoButton.CalculateOptions<LayoutOptions>(container);
+        var options = container.CalculateMemberOptions<LayoutOptions>(nameof(ComponentContainer.DemoButton));
 
         Assert.Equal(10, options.Gap);
     }
 
     [Fact]
-    public void CalculateOptions_Defaults_DerivationContext_To_Source_When_Null()
+    public void CalculateMemberOptions_Applies_Attributes_From_ValueType_Member()
     {
-        // When no derivationContext is supplied (or null is passed), the source instance
-        // should be used as the context for reflective method lookup.
+        // Member-level attributes are applied by name, so value type members work too.
+        var container = new StructContainer();
+
+        var options = container.CalculateMemberOptions<LayoutOptions>(nameof(StructContainer.StructButton));
+
+        Assert.Equal(22, options.Gap);
+    }
+
+    [Fact]
+    public void CalculateOptions_Uses_Source_As_Context()
+    {
+        // CalculateOptions always uses the source instance as the context for reflective
+        // method lookup.
         var source = new DerivedGapElement();
 
-        var options = source.CalculateOptions<LayoutOptions>(derivationContext: null);
+        var options = source.CalculateOptions<LayoutOptions>();
 
         Assert.Equal(42, options.Gap);
+    }
+
+    [Fact]
+    public void CalculateOptions_Uses_Explicit_DerivationContext()
+    {
+        // The derivation method exists on the explicit context, even if the source has a
+        // matching method. The explicit context should win.
+        var source = new ExplicitContextElement();
+        IColumnsProvider derivationContext = new ColumnsProvider();
+
+        var options = source.CalculateOptions<LayoutOptions>(derivationContext);
+
+        Assert.Equal(88, options.Columns);
+        Assert.Equal(3, options.Gap);
+    }
+
+    [Fact]
+    public void CalculateOptions_Throws_When_Source_Is_Null()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            ReflectiveOptionsExtensions.CalculateOptions<LayoutOptions>(null!));
+    }
+
+    [Fact]
+    public void CalculateOptions_Throws_When_DerivationContext_Is_Null()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new ExplicitContextElement().CalculateOptions<LayoutOptions>(null!));
+    }
+
+    [Fact]
+    public void CalculateMemberOptions_Throws_When_DerivationContext_Is_Null()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            ReflectiveOptionsExtensions.CalculateMemberOptions<LayoutOptions>(null!, nameof(LayoutContext.Nested)));
+    }
+
+    [Fact]
+    public void CalculateMemberOptions_Throws_When_MemberName_Missing()
+    {
+        var parent = new LayoutContext();
+
+        Assert.Throws<ArgumentException>(() => parent.CalculateMemberOptions<LayoutOptions>(string.Empty));
+    }
+
+    [Fact]
+    public void CalculateMemberOptions_Throws_When_Member_Missing()
+    {
+        var parent = new LayoutContext();
+
+        Assert.Throws<MissingMemberException>(() => parent.CalculateMemberOptions<LayoutOptions>("Missing"));
+    }
+
+    [Fact]
+    public void CalculateMemberOptions_Throws_When_Member_Not_Readable()
+    {
+        var parent = new WriteOnlyContainer();
+
+        Assert.Throws<InvalidOperationException>(() => parent.CalculateMemberOptions<LayoutOptions>(nameof(WriteOnlyContainer.WriteOnly)));
+    }
+
+    [Fact]
+    public void CalculateMemberOptions_Throws_When_Member_Is_Indexer()
+    {
+        var parent = new IndexedContainer();
+
+        Assert.Throws<InvalidOperationException>(() => parent.CalculateMemberOptions<LayoutOptions>("Item"));
+    }
+
+    [Fact]
+    public void CalculateMemberOptions_Applies_Attributes_From_Context_Field()
+    {
+        var container = new FieldContainer();
+
+        var options = container.CalculateMemberOptions<LayoutOptions>(nameof(FieldContainer.FieldButton));
+
+        Assert.Equal(17, options.Gap);
     }
 
     [Fact]
@@ -119,6 +205,13 @@ public sealed class ReflectiveOptionsTests
         var options = new NullLayoutNameElement().CalculateOptions<LayoutOptions>();
 
         Assert.True(options.WasNullLayoutName);
+    }
+
+    [Fact]
+    public void CalculateOptions_Throws_When_Null_Returned_For_NonNullable_ReferenceType_Result()
+    {
+        // The derivation method claims a non-nullable reference type but returns null.
+        Assert.Throws<InvalidOperationException>(() => new NonNullableLayoutNameElement().CalculateOptions<LayoutOptions>());
     }
 
     [Fact]
@@ -182,7 +275,7 @@ public sealed class ReflectiveOptionsTests
         Assert.Throws<InvalidOperationException>(() => new TypeMismatchElement().CalculateOptions<LayoutOptions>());
     }
 
-    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Property, AllowMultiple = true, Inherited = true)]
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
     private sealed class GapAttribute(int value) : Attribute, IOptionAttribute<LayoutOptions>
     {
         public void Apply(LayoutOptions options) => options.Gap = value;
@@ -200,7 +293,7 @@ public sealed class ReflectiveOptionsTests
         public override void Apply(int derivationResult, LayoutOptions options) => options.Gap = derivationResult;
     }
 
-    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
     private sealed class DerivedColumnsAttribute(string methodName) : DerivedOptionAttribute<LayoutOptions, int>(methodName)
     {
         public override void Apply(int derivationResult, LayoutOptions options) => options.Columns = derivationResult;
@@ -221,6 +314,13 @@ public sealed class ReflectiveOptionsTests
     {
         public override void Apply(string? derivationResult, LayoutOptions options) =>
             options.WasNullLayoutName = derivationResult is null;
+    }
+
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+    private sealed class DerivedLayoutNameNonNullAttribute(string methodName) : DerivedOptionAttribute<LayoutOptions, string>(methodName)
+    {
+        public override void Apply(string derivationResult, LayoutOptions options) =>
+            options.LayoutName = derivationResult;
     }
 
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
@@ -285,6 +385,8 @@ public sealed class ReflectiveOptionsTests
         private int CalculateColumns() => 77;
 
         [DerivedColumns(nameof(CalculateColumns))]
+        public NestedElement Nested { get; } = new();
+
         public sealed class NestedElement
         {
         }
@@ -312,11 +414,21 @@ public sealed class ReflectiveOptionsTests
     {
     }
 
+    private sealed class StructContainer
+    {
+        [Gap(22)]
+        public StructButton StructButton { get; set; }
+    }
+
+    private struct StructButton
+    {
+    }
+
     [Gap(1)]
-    [IrrelevantDerived(nameof(MissingMethod))]
+    [IrrelevantDerived(nameof(IrrelevantMethod))]
     private sealed class IrrelevantAttributeElement
     {
-        private static int MissingMethod() => 0;
+        private static int IrrelevantMethod() => 0;
     }
 
     [IndirectDerivedGap(nameof(GetIndirectGap))]
@@ -325,10 +437,53 @@ public sealed class ReflectiveOptionsTests
         private int GetIndirectGap() => 100;
     }
 
+    [Gap(3)]
+    [DerivedColumns(nameof(IColumnsProvider.GetColumns))]
+    private sealed class ExplicitContextElement
+    {
+    }
+
+    private interface IColumnsProvider
+    {
+        int GetColumns();
+    }
+
+    private sealed class ColumnsProvider : IColumnsProvider
+    {
+        public int GetColumns() => 88;
+    }
+
+    private sealed class WriteOnlyContainer
+    {
+        public MyButton WriteOnly
+        {
+            set
+            {
+            }
+        }
+    }
+
+    private sealed class IndexedContainer
+    {
+        public MyButton this[int index] => new();
+    }
+
+    private sealed class FieldContainer
+    {
+        [Gap(17)]
+        public MyButton FieldButton = new();
+    }
+
     [DerivedLayoutName(nameof(GetNullLayoutName))]
     private sealed class NullLayoutNameElement
     {
         private string? GetNullLayoutName() => null;
+    }
+
+    [DerivedLayoutNameNonNull(nameof(GetLayoutName))]
+    private sealed class NonNullableLayoutNameElement
+    {
+        private string GetLayoutName() => null!;
     }
 
     [DerivedPadding(nameof(GetPadding))]
