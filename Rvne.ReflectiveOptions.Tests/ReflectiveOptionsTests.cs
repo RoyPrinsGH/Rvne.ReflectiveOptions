@@ -40,41 +40,71 @@ public sealed class ReflectiveOptionsTests
     }
 
     [Fact]
-    public void CalculateOptions_Uses_DerivationContext_When_Provided()
+    public void CalculateOptionsFor_Uses_DerivationContext_When_Provided()
     {
         // The nested element is decorated with a derived columns attribute whose method
-        // exists on the parent context. Passing the parent as derivationContext should
-        // route the reflective lookup to that context type rather than the nested element.
+        // exists on the parent context. Using CalculateOptionsFor should route the
+        // reflective lookup to that context type rather than the nested element.
         var parent = new LayoutContext();
-        var child = new LayoutContext.NestedElement();
-
-        var options = child.CalculateOptions<LayoutOptions>(parent);
+        var options = parent.CalculateOptionsFor<LayoutOptions>(nameof(LayoutContext.Nested));
 
         Assert.Equal(77, options.Columns);
     }
 
     [Fact]
-    public void CalculateOptions_Applies_Attributes_From_Context_Member()
+    public void CalculateOptionsFor_Applies_Attributes_From_Context_Member()
     {
         // A component can be decorated at the member level in a parent container. When the
-        // container is used as derivationContext, those member attributes should apply.
+        // container is used as the derivation context, those member attributes should apply.
         var container = new ComponentContainer();
 
-        var options = container.DemoButton.CalculateOptions<LayoutOptions>(container);
+        var options = container.CalculateOptionsFor<LayoutOptions>(nameof(ComponentContainer.DemoButton));
 
         Assert.Equal(10, options.Gap);
     }
 
     [Fact]
-    public void CalculateOptions_Defaults_DerivationContext_To_Source_When_Null()
+    public void CalculateOptionsFor_Applies_Attributes_From_ValueType_Member()
     {
-        // When no derivationContext is supplied (or null is passed), the source instance
-        // should be used as the context for reflective method lookup.
+        // Member-level attributes are applied by name, so value type members work too.
+        var container = new StructContainer();
+
+        var options = container.CalculateOptionsFor<LayoutOptions>(nameof(StructContainer.StructButton));
+
+        Assert.Equal(22, options.Gap);
+    }
+
+    [Fact]
+    public void CalculateOptions_Uses_Source_As_Context()
+    {
+        // CalculateOptions always uses the source instance as the context for reflective
+        // method lookup.
         var source = new DerivedGapElement();
 
-        var options = source.CalculateOptions<LayoutOptions>(derivationContext: null);
+        var options = source.CalculateOptions<LayoutOptions>();
 
         Assert.Equal(42, options.Gap);
+    }
+
+    [Fact]
+    public void CalculateOptions_Uses_Explicit_DerivationContext()
+    {
+        // The derivation method exists on the explicit context, even if the source has a
+        // matching method. The explicit context should win.
+        var source = new ExplicitContextElement();
+        IColumnsProvider derivationContext = new ColumnsProvider();
+
+        var options = source.CalculateOptions<LayoutOptions>(derivationContext);
+
+        Assert.Equal(88, options.Columns);
+        Assert.Equal(3, options.Gap);
+    }
+
+    [Fact]
+    public void CalculateOptions_Throws_When_DerivationContext_Is_Null()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new ExplicitContextElement().CalculateOptions<LayoutOptions>(null!));
     }
 
     [Fact]
@@ -284,6 +314,8 @@ public sealed class ReflectiveOptionsTests
     {
         private int CalculateColumns() => 77;
 
+        public NestedElement Nested { get; } = new();
+
         [DerivedColumns(nameof(CalculateColumns))]
         public sealed class NestedElement
         {
@@ -312,17 +344,43 @@ public sealed class ReflectiveOptionsTests
     {
     }
 
+    private sealed class StructContainer
+    {
+        [Gap(22)]
+        public StructButton StructButton { get; set; }
+    }
+
+    private struct StructButton
+    {
+    }
+
     [Gap(1)]
-    [IrrelevantDerived(nameof(MissingMethod))]
+    [IrrelevantDerived(nameof(IrrelevantMethod))]
     private sealed class IrrelevantAttributeElement
     {
-        private static int MissingMethod() => 0;
+        private static int IrrelevantMethod() => 0;
     }
 
     [IndirectDerivedGap(nameof(GetIndirectGap))]
     private sealed class IndirectDerivedGapElement
     {
         private int GetIndirectGap() => 100;
+    }
+
+    [Gap(3)]
+    [DerivedColumns(nameof(IColumnsProvider.GetColumns))]
+    private sealed class ExplicitContextElement
+    {
+    }
+
+    private interface IColumnsProvider
+    {
+        int GetColumns();
+    }
+
+    private sealed class ColumnsProvider : IColumnsProvider
+    {
+        public int GetColumns() => 88;
     }
 
     [DerivedLayoutName(nameof(GetNullLayoutName))]

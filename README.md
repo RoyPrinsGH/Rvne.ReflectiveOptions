@@ -90,7 +90,7 @@ var options = command.CalculateOptions<CommandOptions>();
 
 ## Derivation context
 
-You can provide a different object for method lookup by passing `derivationContext`:
+You can provide a parent object for method lookup by using `CalculateOptionsFor` on the context:
 
 ```csharp
 public sealed class CliRoot
@@ -105,11 +105,18 @@ public sealed class CliRoot
 }
 
 var root = new CliRoot { Profile = ExecutionProfile.CI };
-var options = root.Warm.CalculateOptions<CommandOptions>(root);
+var options = root.CalculateOptionsFor<CommandOptions>(nameof(CliRoot.Warm));
 // options.TimeoutMs == 90_000
 ```
 
-If `derivationContext` is `null` or omitted, the source object is used.
+If you already have the source instance and want to override the derivation context, you can pass it directly:
+
+```csharp
+var command = new WarmCacheCommand { Profile = ExecutionProfile.Local };
+var context = new CliRoot { Profile = ExecutionProfile.CI };
+var options = command.CalculateOptions<CommandOptions>(context);
+// options.TimeoutMs == 90_000
+```
 
 Attributes are discovered with `inherit: true`, so base-class attributes are applied.
 
@@ -142,7 +149,7 @@ public sealed class ExportCommand
 
 var group = new ExportGroup();
 var commandOptions = group.CalculateOptions<CommandOptions>();
-var outputOptions = group.Export.CalculateOptions<OutputOptions>();
+var outputOptions = group.CalculateOptionsFor<OutputOptions>(nameof(ExportGroup.Export));
 // commandOptions.Retries == 1
 // outputOptions.Format == "json"
 ```
