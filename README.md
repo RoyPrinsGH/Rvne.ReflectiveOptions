@@ -52,6 +52,16 @@ public sealed class DerivedTimeoutAttribute(string methodName)
 }
 ```
 
+For simple compile-time assignments, you can also inherit `AutoOptionAttribute<TOptions, TValue>`:
+
+```csharp
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
+public sealed class TimeoutAttribute(int value)
+    : AutoOptionAttribute<CommandOptions, int>(nameof(CommandOptions.TimeoutMs), value)
+{
+}
+```
+
 ### 2) Annotate your source type
 
 ```csharp

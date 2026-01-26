@@ -276,9 +276,9 @@ public sealed class ReflectiveOptionsTests
     }
 
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
-    private sealed class GapAttribute(int value) : Attribute, IOptionAttribute<LayoutOptions>
+    private sealed class GapAttribute(int value)
+        : ReflectiveOptionAttribute<LayoutOptions, int>(nameof(LayoutOptions.Gap), value)
     {
-        public void Apply(LayoutOptions options) => options.Gap = value;
     }
 
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
