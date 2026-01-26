@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Reflection;
 
 namespace Rvne.ReflectiveOptions.Reflection;
@@ -8,29 +7,12 @@ namespace Rvne.ReflectiveOptions.Reflection;
 /// </summary>
 /// <remarks>
 /// In this library an "option member" is the field or property on the options type referenced by a
-/// <see cref="ReflectiveOptionAttribute{TOptions,TValue}"/>. We throw when that member is missing,
+/// <see cref="Attributes.ReflectiveOptionAttribute{TOptions,TMember}"/>. We throw when that member is missing,
 /// not writable, or cannot accept the provided value (including nullability constraints) because those
 /// cases are invalid option definitions rather than recoverable runtime conditions.
 /// </remarks>
 public static class OptionMemberReflectionHelpers
 {
-    // Not entirely sure why this is not static, but reading the source
-    // it seem to hold some sort of lookup cache, so I'm placing it behind a static class
-    // to keep the allocations to a minimum
-    private readonly static NullabilityInfoContext _nullabilityInfoContext = new();
-
-    /// <summary>
-    /// Gets nullability metadata for a field or property member.
-    /// </summary>
-    internal static NullabilityInfo GetNullabilityInfo(MemberInfo fieldInfo) =>
-        fieldInfo switch
-        {
-            PropertyInfo property => _nullabilityInfoContext.Create(property),
-            FieldInfo field => _nullabilityInfoContext.Create(field),
-            _ => throw new InvalidOperationException(
-                $"Member '{fieldInfo.DeclaringType!.FullName}.{fieldInfo.Name}' is not a field or property.")
-        };
-
     /// <summary>
     /// Ensures the provided option value type can be assigned to the option member.
     /// </summary>
@@ -82,7 +64,7 @@ public static class OptionMemberReflectionHelpers
         }
         else
         {
-            NullabilityInfo nullability = GetNullabilityInfo(optionMember);
+            NullabilityInfo nullability = NullabilityHelpers.GetNullabilityInfo(optionMember);
 
             var nullState = nullability.WriteState == NullabilityState.Unknown
                 ? nullability.ReadState
@@ -136,14 +118,15 @@ public static class OptionMemberReflectionHelpers
         };
     }
 
-    // TODO: Summary
+    /// <summary>
+    /// Applies a value to the named option member on the options instance.
+    /// </summary>
     public static void Apply<TOptions, TValue>(TOptions options, string optionMemberName, TValue value)
     {
         ArgumentNullException.ThrowIfNull(options);
 
         if (string.IsNullOrWhiteSpace(optionMemberName))
-            // TODO: Fill this exception
-            throw new MissingMethodException("");
+            throw new ArgumentException("Member name must be provided.", nameof(optionMemberName));
 
         MemberInfo member = FindMemberByName(typeof(TOptions), optionMemberName);
 
@@ -159,7 +142,7 @@ public static class OptionMemberReflectionHelpers
         }
         else
         {
-            throw new InvalidOperationException($"Member '{typeof(TOptions).FullName}.{optionMemberName}' is not a field or property.");
+            throw new InvalidOperationException($"Member '{typeof(TOptions).FullName}.{member.Name}' is not a field or property.");
         }
     }
 }
