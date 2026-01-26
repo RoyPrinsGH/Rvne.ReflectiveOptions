@@ -130,7 +130,7 @@ public static class OptionMemberReflectionHelpers
 
         MemberInfo member = FindMemberByName(typeof(TOptions), optionMemberName);
 
-        ThrowIfNotAssignable(member, typeof(TValue));
+        ThrowIfNotAssignable(member, value?.GetType());
 
         if (member is PropertyInfo property)
         {

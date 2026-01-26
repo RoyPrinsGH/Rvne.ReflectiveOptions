@@ -99,7 +99,7 @@ var options = command.CalculateOptions<CommandOptions>();
 - If the method returns `null` for a non-nullable reference type, an exception is thrown.
 - The returned value must be assignable to the result type specified on the attribute.
 
-## Derivation context
+## Declaring instance
 
 You can provide a parent object for method lookup by using `CalculateMemberOptions` on the context:
 
@@ -120,7 +120,7 @@ var options = root.CalculateMemberOptions<CommandOptions>(nameof(CliRoot.Warm));
 // options.TimeoutMs == 90_000
 ```
 
-If you already have the source instance and want to override the derivation context, you can pass it directly:
+If you already have the source instance and want to override the declaring instance, you can pass it directly:
 
 ```csharp
 var command = new WarmCacheCommand { Profile = ExecutionProfile.Local };

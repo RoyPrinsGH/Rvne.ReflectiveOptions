@@ -2,7 +2,9 @@ using Rvne.ReflectiveOptions.Reflection;
 
 namespace Rvne.ReflectiveOptions;
 
-// TODO: Summary
+/// <summary>
+/// Builds option instances by applying attributes without caching the result.
+/// </summary>
 internal static class UncachedBuilder
 {
     internal static TOptions BuildFrom<TOptions>(IEnumerable<Attribute> customAttributes, object derivationContext)

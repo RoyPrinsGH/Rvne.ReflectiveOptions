@@ -2,10 +2,14 @@
 
 namespace Rvne.ReflectiveOptions;
 
-// TODO: Summaries for everything in this file
-
+/// <summary>
+/// Extension methods for deriving options from attributes.
+/// </summary>
 public static class ReflectiveOptionsExtensions
 {
+    /// <summary>
+    /// Builds options from the attributes on the source type, using the source as the declaring instance.
+    /// </summary>
     public static TOptions GetOptions<TOptions>(this object source)
         where TOptions : new()
     {
@@ -14,20 +18,26 @@ public static class ReflectiveOptionsExtensions
         return source.GetOptions<TOptions>(source);
     }
 
-    public static TOptions GetOptions<TOptions>(this object source, object derivationContext)
+    /// <summary>
+    /// Builds options from the attributes on the source type using the provided declaring instance.
+    /// </summary>
+    public static TOptions GetOptions<TOptions>(this object source, object declaringInstance)
         where TOptions : new()
     {
         ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(derivationContext);
+        ArgumentNullException.ThrowIfNull(declaringInstance);
 
         IEnumerable<Attribute> sourceAttributes
             = source.GetType()
                 .GetCustomAttributes(inherit: true)
                 .Cast<Attribute>();
 
-        return UncachedBuilder.BuildFrom<TOptions>(sourceAttributes, derivationContext);
+        return UncachedBuilder.BuildFrom<TOptions>(sourceAttributes, declaringInstance);
     }
 
+    /// <summary>
+    /// Builds options from the attributes applied to a specific member on the declaring instance.
+    /// </summary>
     public static TOptions GetMemberOptions<TOptions>(this object derivationContext, string memberName)
         where TOptions : new()
     {
