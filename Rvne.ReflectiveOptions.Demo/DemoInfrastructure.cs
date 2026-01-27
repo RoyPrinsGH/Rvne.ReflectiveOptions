@@ -1,96 +1,163 @@
-using Rvne.ReflectiveOptions;
+using System.Reflection;
 using Rvne.ReflectiveOptions.Attributes;
 
 namespace Rvne.ReflectiveOptions.Demo;
 
-internal static class CommandTree
+internal enum Environment
 {
-    public static void PrintTree(CliRoot root)
-    {
-        PrintNode(root.Name, root.GetOptions<CommandOptions>(), new MemberOptions(), indent: 0);
-
-        var syncMemberOptions = root.GetMemberOptions<MemberOptions>(nameof(CliRoot.Sync));
-        PrintNode(root.Sync.Name, root.Sync.GetOptions<CommandOptions>(), syncMemberOptions, indent: 1);
-
-        var pullMemberOptions = root.Sync.GetMemberOptions<MemberOptions>(nameof(SyncGroup.Pull));
-        PrintNode(root.Sync.Pull.Name, root.Sync.Pull.GetOptions<CommandOptions>(), pullMemberOptions, indent: 2);
-
-        var pushMemberOptions = root.Sync.GetMemberOptions<MemberOptions>(nameof(SyncGroup.Push));
-        PrintNode(root.Sync.Push.Name, root.Sync.Push.GetOptions<CommandOptions>(), pushMemberOptions, indent: 2);
-
-        var cacheMemberOptions = root.GetMemberOptions<MemberOptions>(nameof(CliRoot.Cache));
-        PrintNode(root.Cache.Name, root.Cache.GetOptions<CommandOptions>(), cacheMemberOptions, indent: 1);
-
-        var warmMemberOptions = root.Cache.GetMemberOptions<MemberOptions>(nameof(CacheGroup.Warm));
-        PrintNode(root.Cache.Warm.Name, root.Cache.Warm.GetOptions<CommandOptions>(), warmMemberOptions, indent: 2);
-
-        var clearMemberOptions = root.Cache.GetMemberOptions<MemberOptions>(nameof(CacheGroup.Clear));
-        PrintNode(root.Cache.Clear.Name, root.Cache.Clear.GetOptions<CommandOptions>(), clearMemberOptions, indent: 2);
-
-        var lintMemberOptions = root.GetMemberOptions<MemberOptions>(nameof(CliRoot.Lint));
-        PrintNode(root.Lint.Name, root.Lint.GetOptions<CommandOptions>(), lintMemberOptions, indent: 1);
-    }
-
-    private static void PrintNode(string name, CommandOptions options, MemberOptions memberOptions, int indent)
-    {
-        Console.WriteLine($"{new string(' ', indent * 2)}- {name} " +
-                          $"(Timeout={options.TimeoutMs}ms, Retries={options.Retries}, " +
-                          $"Parallelism={options.MaxParallelism}, DryRun={memberOptions.DryRun}, " +
-                          $"Visible={options.Visible})");
-    }
+    Local,
+    CI
 }
 
-internal sealed class CommandOptions
+internal abstract class EnvironmentAwareBase(Environment env)
+{
+    protected bool IsLocalEnv()
+        => env == Environment.Local;
+}
+
+internal sealed class CommandRunnerOptions
 {
     public int TimeoutMs { get; set; } = 30_000;
     public int Retries { get; set; }
-    public int MaxParallelism { get; set; } = 1;
-    public bool Visible { get; set; } = true;
+    public bool Runnable { get; set; } = true;
+    public string? Name { get; set; }
 }
 
-internal sealed class MemberOptions
+internal sealed class CommandInfo
 {
-    public bool DryRun { get; set; }
+    public string? Description { get; set; }
 }
 
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
+internal interface ICommand
+{
+    void Execute();
+}
+
+// CommandRunnerOptions
+[AttributeUsage(AttributeTargets.Property)]
 internal sealed class TimeoutAttribute(int value)
-    : ReflectiveOptionAttribute<CommandOptions, int>(nameof(CommandOptions.TimeoutMs), value)
-{
-}
+    : ReflectiveOptionAttribute<CommandRunnerOptions, int>(nameof(CommandRunnerOptions.TimeoutMs), value);
 
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
+[AttributeUsage(AttributeTargets.Property)]
 internal sealed class RetriesAttribute(int value)
-    : ReflectiveOptionAttribute<CommandOptions, int>(nameof(CommandOptions.Retries), value)
-{
-}
+    : ReflectiveOptionAttribute<CommandRunnerOptions, int>(nameof(CommandRunnerOptions.Retries), value);
 
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
-internal sealed class MaxParallelismAttribute(int value)
-    : ReflectiveOptionAttribute<CommandOptions, int>(nameof(CommandOptions.MaxParallelism), value)
-{
-}
+[AttributeUsage(AttributeTargets.Property)]
+internal sealed class NameAttribute(string value)
+    : ReflectiveOptionAttribute<CommandRunnerOptions, string>(nameof(CommandRunnerOptions.Name), value);
 
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
-internal sealed class DryRunAttribute(bool value)
-    : ReflectiveOptionAttribute<MemberOptions, bool>(nameof(MemberOptions.DryRun), value)
-{
-}
-
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
-internal sealed class VisibilityAttribute(bool value)
-    : ReflectiveOptionAttribute<CommandOptions, bool>(nameof(CommandOptions.Visible), value)
-{
-}
-
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
+[AttributeUsage(AttributeTargets.Property)]
 internal sealed class DerivedTimeoutAttribute(string methodName)
-    : DerivedReflectiveOptionAttribute<CommandOptions, int>(nameof(CommandOptions.TimeoutMs), methodName)
-{
-}
+    : DerivedReflectiveOptionAttribute<CommandRunnerOptions, int>(nameof(CommandRunnerOptions.TimeoutMs), methodName);
 
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
-internal sealed class DerivedVisibilityAttribute(string methodName)
-    : DerivedReflectiveOptionAttribute<CommandOptions, bool>(nameof(CommandOptions.Visible), methodName)
+[AttributeUsage(AttributeTargets.Property)]
+internal sealed class DerivedRunnabilityAttribute(string methodName)
+    : DerivedReflectiveOptionAttribute<CommandRunnerOptions, bool>(nameof(CommandRunnerOptions.Runnable), methodName);
+
+// CommandInfo
+[AttributeUsage(AttributeTargets.Class)]
+internal sealed class DescriptionAttribute(string description)
+    : ReflectiveOptionAttribute<CommandInfo, string>(nameof(CommandInfo.Description), description);
+
+internal static partial class Program
 {
+    private static void PrintCliTreeForEnv(Environment env)
+    {
+        var root = new Cli(env);
+        var rootInfo = root.GetOptions<CommandInfo>();
+
+        Console.WriteLine($"Environment: {env}");
+
+        if (!string.IsNullOrWhiteSpace(rootInfo.Description))
+        {
+            Console.WriteLine(rootInfo.Description);
+        }
+
+        foreach (var property in root.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public))
+        {
+            if (property.GetValue(root) is not ICommand command)
+                continue;
+
+            var options = root.GetMemberOptions<CommandRunnerOptions>(property.Name);
+            if (!options.Runnable)
+                continue;
+
+            var commandInfo = command.GetOptions<CommandInfo>();
+            var displayName = options.Name ?? property.Name.ToLower();
+            var description = string.IsNullOrWhiteSpace(commandInfo.Description)
+                ? "no description"
+                : commandInfo.Description;
+
+            Console.WriteLine(
+                $"- {displayName}: timeout={options.TimeoutMs}ms, retries={options.Retries}, description={description}");
+        }
+    }
+
+    private static int RunCommand(Environment env, string commandName)
+    {
+        var root = new Cli(env);
+
+        foreach (var property in root.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public))
+        {
+            if (property.GetValue(root) is not ICommand command)
+                continue;
+
+            var options = root.GetMemberOptions<CommandRunnerOptions>(property.Name);
+            var displayName = options.Name ?? property.Name.ToLowerInvariant();
+
+            if (!string.Equals(displayName, commandName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!options.Runnable)
+            {
+                Console.WriteLine($"Command '{displayName}' is not runnable in {env}.");
+                return 2;
+            }
+
+            Console.WriteLine(
+                $"Running '{displayName}' (timeout={options.TimeoutMs}ms, retries={options.Retries})...");
+
+            for (var attempt = 0; attempt <= options.Retries; attempt++)
+            {
+                try
+                {
+                    if (!ExecuteWithTimeout(command, options.TimeoutMs))
+                    {
+                        Console.WriteLine($"Attempt {attempt + 1} timed out.");
+                    }
+                    else
+                    {
+                        return 0;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Attempt {attempt + 1} failed: {ex.Message}");
+                }
+            }
+
+            Console.WriteLine($"Command '{displayName}' failed after {options.Retries + 1} attempts.");
+            return 1;
+        }
+
+        Console.WriteLine($"Unknown command '{commandName}'.");
+        Console.WriteLine("Available commands:");
+        PrintCliTreeForEnv(env);
+        return 2;
+    }
+
+    private static bool ExecuteWithTimeout(ICommand command, int timeoutMs)
+    {
+        Task task = Task.Run(command.Execute);
+
+        if (task.Wait(timeoutMs))
+        {
+            task.GetAwaiter().GetResult();
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
 }
