@@ -1,4 +1,5 @@
-﻿using Rvne.ReflectiveOptions.Reflection;
+﻿using System.Reflection;
+using Rvne.ReflectiveOptions.Reflection;
 
 namespace Rvne.ReflectiveOptions;
 
@@ -27,10 +28,9 @@ public static class ReflectiveOptionsExtensions
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(declaringInstance);
 
-        IEnumerable<Attribute> sourceAttributes
-            = source.GetType()
-                .GetCustomAttributes(inherit: true)
-                .Cast<Attribute>();
+        IEnumerable<Attribute> sourceAttributes = source.GetType()
+            .GetCustomAttributes(inherit: true)
+            .Cast<Attribute>();
 
         return UncachedBuilder.BuildFrom<TOptions>(sourceAttributes, declaringInstance);
     }
@@ -38,19 +38,35 @@ public static class ReflectiveOptionsExtensions
     /// <summary>
     /// Builds options from the attributes applied to a specific member on the declaring instance.
     /// </summary>
-    public static TOptions GetMemberOptions<TOptions>(this object derivationContext, string memberName)
+    public static TOptions GetMemberOptions<TOptions>(this object declaringInstance, string memberName)
         where TOptions : new()
     {
-        ArgumentNullException.ThrowIfNull(derivationContext);
+        ArgumentNullException.ThrowIfNull(declaringInstance);
 
         if (string.IsNullOrWhiteSpace(memberName))
             throw new ArgumentException("Member name must be provided.", nameof(memberName));
 
         IEnumerable<Attribute> memberAttributes
-            = OptionMemberReflectionHelpers.FindMemberByName(derivationContext.GetType(), memberName)
+            = OptionMemberReflectionHelpers.FindMemberByName(declaringInstance.GetType(), memberName)
                 .GetCustomAttributes(inherit: true)
                 .Cast<Attribute>();
 
-        return UncachedBuilder.BuildFrom<TOptions>(memberAttributes, derivationContext);
+        return UncachedBuilder.BuildFrom<TOptions>(memberAttributes, declaringInstance);
+    }
+
+    /// <summary>
+    /// Builds options from the attributes applied to a specific member on the declaring instance.
+    /// </summary>
+    public static TOptions GetMemberOptions<TOptions>(this object declaringInstance, MethodInfo methodInfo)
+        where TOptions : new()
+    {
+        ArgumentNullException.ThrowIfNull(declaringInstance);
+        ArgumentNullException.ThrowIfNull(methodInfo);
+
+        IEnumerable<Attribute> memberAttributes = methodInfo
+            .GetCustomAttributes(inherit: true)
+            .Cast<Attribute>();
+
+        return UncachedBuilder.BuildFrom<TOptions>(memberAttributes, declaringInstance);
     }
 }
