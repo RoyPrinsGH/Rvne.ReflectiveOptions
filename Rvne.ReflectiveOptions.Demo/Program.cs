@@ -16,11 +16,10 @@ internal static class Program
     {
         // Build a command tree and resolve reflective options from attributes.
         var root = new CliRoot(profile);
-        var resolved = CommandTree.BuildResolvedTree(root);
 
         // Print the resolved options at each node.
         Console.WriteLine($"Profile: {profile}");
-        CommandTree.PrintTree(resolved, indent: 0);
+        CommandTree.PrintTree(root);
     }
 }
 
@@ -32,67 +31,60 @@ internal enum ExecutionProfile
 
 [Timeout(30_000)]
 [Retries(1)]
-internal sealed class CliRoot : CommandNode
+internal sealed class CliRoot(ExecutionProfile profile)
 {
+    public string Name { get; } = "rvne";
+
     // Execution profile is used by derived options in children.
-    public ExecutionProfile Profile { get; }
+    public ExecutionProfile Profile { get; } = profile;
 
     // Static options on groups and actions flow through the tree.
-    [MaxParallelism(4)]
     public SyncGroup Sync { get; } = new();
 
-    public CacheGroup Cache { get; }
+    public CacheGroup Cache { get; } = new CacheGroup(profile);
 
     // A leaf command can still carry options.
     [DryRun(true)]
-    public CommandAction Lint { get; } = new("lint");
-
-    public CliRoot(ExecutionProfile profile) : base("rvne")
-    {
-        Profile = profile;
-        Cache = new CacheGroup(profile);
-
-        Children.Add(Sync);
-        Children.Add(Cache);
-        Children.Add(Lint);
-    }
+    public LintCommand Lint { get; } = new();
 }
 
-internal sealed class SyncGroup : CommandGroup
+[MaxParallelism(4)]
+internal sealed class SyncGroup
 {
-    [Timeout(15_000)]
-    public CommandAction Pull { get; } = new("pull");
+    public string Name { get; } = "sync";
 
-    [Timeout(45_000)]
-    [Retries(2)]
-    public CommandAction Push { get; } = new("push");
+    public PullCommand Pull { get; } = new();
 
-    public SyncGroup() : base("sync")
-    {
-        Children.Add(Pull);
-        Children.Add(Push);
-    }
+    public PushCommand Push { get; } = new();
 }
 
-internal sealed class CacheGroup : CommandGroup
+internal sealed class CacheGroup(ExecutionProfile profile)
 {
+    public string Name { get; } = "cache";
+
     // Commands that derive behavior from the execution profile.
-    public WarmCacheCommand Warm { get; }
-    public ClearCacheCommand Clear { get; }
+    public WarmCacheCommand Warm { get; } = new WarmCacheCommand(profile);
+    public ClearCacheCommand Clear { get; } = new ClearCacheCommand(profile);
+}
 
-    public CacheGroup(ExecutionProfile profile) : base("cache")
-    {
-        Warm = new WarmCacheCommand(profile);
-        Clear = new ClearCacheCommand(profile);
+[Timeout(15_000)]
+internal sealed class PullCommand
+{
+    public string Name { get; } = "pull";
+}
 
-        Children.Add(Warm);
-        Children.Add(Clear);
-    }
+[Timeout(45_000)]
+[Retries(2)]
+internal sealed class PushCommand
+{
+    public string Name { get; } = "push";
 }
 
 [DerivedTimeout(nameof(ComputeTimeout))]
-internal sealed class WarmCacheCommand(ExecutionProfile profile) : CommandAction("warm")
+internal sealed class WarmCacheCommand(ExecutionProfile profile)
 {
+    public string Name { get; } = "warm";
+
     // Derived option: timeout changes between Local and CI.
     private readonly ExecutionProfile _profile = profile;
 
@@ -101,11 +93,18 @@ internal sealed class WarmCacheCommand(ExecutionProfile profile) : CommandAction
 }
 
 [DerivedVisibility(nameof(ComputeVisibility))]
-internal sealed class ClearCacheCommand(ExecutionProfile profile) : CommandAction("clear")
+internal sealed class ClearCacheCommand(ExecutionProfile profile)
 {
+    public string Name { get; } = "clear";
+
     // Derived option: hide destructive command in CI.
     private readonly ExecutionProfile _profile = profile;
 
     private bool ComputeVisibility()
         => _profile != ExecutionProfile.CI;
+}
+
+internal sealed class LintCommand
+{
+    public string Name { get; } = "lint";
 }
