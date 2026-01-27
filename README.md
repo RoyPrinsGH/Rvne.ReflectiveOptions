@@ -8,153 +8,158 @@ ReflectiveOptions builds option objects from attributes on a source type. It is 
 
 ## Targets
 
-- `net6.0`
 - `net8.0`
 - `net10.0`
+
+## Demo Examples
+
+There is a small runnable CLI demo that exercises the core scenarios in this README:
+
+- Demo overview and run instructions: `Rvne.ReflectiveOptions.Demo/README.md`
+- Annotated CLI + commands: `Rvne.ReflectiveOptions.Demo/Program.cs`
+- Option types, attributes, and a compact runner: `Rvne.ReflectiveOptions.Demo/DemoInfrastructure.cs`
 
 ## Usage
 
 ### 1) Define option attributes
 
-Implement `IOptionAttribute<TOptions>` for compile-time application:
+The demo defines two option domains:
+
+- Runner options on CLI members (`CommandRunnerOptions`)
+- Descriptions on command types (`CommandInfo`)
+
+For compile-time application, inherit `ReflectiveOptionAttribute<TOptions, TMember>`:
 
 ```csharp
-using Rvne.ReflectiveOptions;
+using Rvne.ReflectiveOptions.Attributes;
 
-public sealed class CommandOptions
+public sealed class CommandRunnerOptions
 {
     public int TimeoutMs { get; set; } = 30_000;
     public int Retries { get; set; }
+    public bool Runnable { get; set; } = true;
+    public string? Name { get; set; }
 }
 
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
-public sealed class TimeoutAttribute(int value) : Attribute, IOptionAttribute<CommandOptions>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class TimeoutAttribute(int value)
+    : ReflectiveOptionAttribute<CommandRunnerOptions, int>(nameof(CommandRunnerOptions.TimeoutMs), value);
+
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class RetriesAttribute(int value)
+    : ReflectiveOptionAttribute<CommandRunnerOptions, int>(nameof(CommandRunnerOptions.Retries), value);
+
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class NameAttribute(string value)
+    : ReflectiveOptionAttribute<CommandRunnerOptions, string>(nameof(CommandRunnerOptions.Name), value);
+
+public sealed class CommandInfo
 {
-    public void Apply(CommandOptions options) => options.TimeoutMs = value;
+    public string? Description { get; set; }
 }
 
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
-public sealed class RetriesAttribute(int value) : Attribute, IOptionAttribute<CommandOptions>
-{
-    public void Apply(CommandOptions options) => options.Retries = value;
-}
+[AttributeUsage(AttributeTargets.Class)]
+public sealed class DescriptionAttribute(string description)
+    : ReflectiveOptionAttribute<CommandInfo, string>(nameof(CommandInfo.Description), description);
 ```
 
-Use `DerivedOptionAttribute<TOptions, TResult>` for derived values:
+For derived values, inherit `DerivedReflectiveOptionAttribute<TOptions, TDerivationResult>`:
 
 ```csharp
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
+using Rvne.ReflectiveOptions.Attributes;
+
+[AttributeUsage(AttributeTargets.Property)]
 public sealed class DerivedTimeoutAttribute(string methodName)
-    : DerivedOptionAttribute<CommandOptions, int>(methodName)
+    : DerivedReflectiveOptionAttribute<CommandRunnerOptions, int>(nameof(CommandRunnerOptions.TimeoutMs), methodName);
+
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class DerivedRunnabilityAttribute(string methodName)
+    : DerivedReflectiveOptionAttribute<CommandRunnerOptions, bool>(nameof(CommandRunnerOptions.Runnable), methodName);
+```
+
+If you need complete control, you can implement the middleware interfaces directly:
+
+```csharp
+using Rvne.ReflectiveOptions.Interfaces;
+
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class CustomTimeoutAttribute(int value) : Attribute, IStaticOptionMiddleware<CommandRunnerOptions>
 {
-    public override void Apply(int derivationResult, CommandOptions options)
-        => options.TimeoutMs = derivationResult;
+    public void Apply(CommandRunnerOptions options) => options.TimeoutMs = value;
 }
 ```
 
 ### 2) Annotate your source type
 
+This is shown end-to-end in the demo CLI: see `Rvne.ReflectiveOptions.Demo/Program.cs`.
+
 ```csharp
-public enum ExecutionProfile
+public enum Environment
 {
     Local,
     CI
 }
 
-[DerivedTimeout(nameof(ComputeTimeout))]
-[Retries(2)]
-public sealed class WarmCacheCommand
+public abstract class EnvironmentAwareBase(Environment env)
 {
-    public ExecutionProfile Profile { get; set; }
+    protected bool IsLocalEnv() => env == Environment.Local;
+}
 
-    private int ComputeTimeout()
-        => Profile == ExecutionProfile.CI ? 90_000 : 20_000;
+[Description("Root CLI")]
+public sealed class Cli(Environment env) : EnvironmentAwareBase(env)
+{
+    [Retries(2)]
+    [Timeout(45_000)]
+    [DerivedRunnability(nameof(IsLocalEnv))]
+    [Name("push-remote")]
+    public PushCommand Push { get; } = new();
+
+    [DerivedTimeout(nameof(GetPullCommandTimeout))]
+    [Name("pull-remote")]
+    public PullCommand Pull { get; } = new();
+
+    private int GetPullCommandTimeout() => IsLocalEnv() ? 15_000 : 90_000;
 }
 ```
 
 ### 3) Calculate options
 
 ```csharp
-var command = new WarmCacheCommand { Profile = ExecutionProfile.CI };
-var options = command.CalculateOptions<CommandOptions>();
-// options.TimeoutMs == 90_000
-// options.Retries == 2
+var root = new Cli(Environment.CI);
+
+var pullOptions = root.GetMemberOptions<CommandRunnerOptions>(nameof(Cli.Pull));
+// pullOptions.TimeoutMs == 90_000
+// pullOptions.Name == "pull-remote"
+
+var pushOptions = root.GetMemberOptions<CommandRunnerOptions>(nameof(Cli.Push));
+// pushOptions.Runnable == false (derived from IsLocalEnv in CI)
 ```
 
 ## Derivation rules
 
 - The derivation method name is provided by the attribute and looked up via reflection.
-- Methods must be parameterless and return a value (non-void).
+- Methods can be instance or static, must be parameterless, and must return a value (non-void).
 - If the method returns `null` for a non-nullable value type, an exception is thrown.
 - If the method returns `null` for a non-nullable reference type, an exception is thrown.
-- The returned value must be assignable to the result type specified on the attribute.
-
-## Derivation context
-
-You can provide a parent object for method lookup by using `CalculateMemberOptions` on the context:
-
-```csharp
-public sealed class CliRoot
-{
-    public ExecutionProfile Profile { get; set; }
-
-    private int ComputeTimeout()
-        => Profile == ExecutionProfile.CI ? 90_000 : 20_000;
-
-    [DerivedTimeout(nameof(ComputeTimeout))]
-    public WarmCacheCommand Warm { get; } = new();
-}
-
-var root = new CliRoot { Profile = ExecutionProfile.CI };
-var options = root.CalculateMemberOptions<CommandOptions>(nameof(CliRoot.Warm));
-// options.TimeoutMs == 90_000
-```
-
-If you already have the source instance and want to override the derivation context, you can pass it directly:
-
-```csharp
-var command = new WarmCacheCommand { Profile = ExecutionProfile.Local };
-var context = new CliRoot { Profile = ExecutionProfile.CI };
-var options = command.CalculateOptions<CommandOptions>(context);
-// options.TimeoutMs == 90_000
-```
-
-Attributes are discovered with `inherit: true`, so base-class attributes are applied.
+- The returned value must be assignable to the option member referenced by the attribute.
 
 ## Mixing option domains
 
-You can map different option types to different parts of the same tree. For example, a container can carry command options while a child command carries output options:
+You can map different option types to different parts of the same tree. The demo uses:
+
+- `CommandRunnerOptions` on CLI members (properties)
+- `CommandInfo` on command classes
 
 ```csharp
-public sealed class OutputOptions
-{
-    public string Format { get; set; } = "text";
-}
+var root = new Cli(Environment.Local);
 
-[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
-public sealed class FormatAttribute(string value) : Attribute, IOptionAttribute<OutputOptions>
-{
-    public void Apply(OutputOptions options) => options.Format = value;
-}
+var pullRunner = root.GetMemberOptions<CommandRunnerOptions>(nameof(Cli.Pull));
+var pullInfo = root.Pull.GetOptions<CommandInfo>();
 
-[Retries(1)]
-public sealed class ExportGroup
-{
-    [Format("json")]
-    public ExportCommand Export { get; } = new();
-}
-
-public sealed class ExportCommand
-{
-}
-
-var group = new ExportGroup();
-var commandOptions = group.CalculateOptions<CommandOptions>();
-var outputOptions = group.CalculateMemberOptions<OutputOptions>(nameof(ExportGroup.Export));
-// commandOptions.Retries == 1
-// outputOptions.Format == "json"
+// pullRunner.TimeoutMs comes from member attributes (and derivation on the parent).
+// pullInfo.Description comes from attributes on the command type itself.
 ```
 
 ### Member-level attributes
 
-`CalculateMemberOptions` applies only the attributes defined on the named member (property/field). It does not read attributes from the member's value type. Use `CalculateOptions` on the value itself if you need the value's own attributes applied.
+`GetMemberOptions` applies only the attributes defined on the named member (property/field). It does not read attributes from the member's value type. Use `GetOptions` on the value itself if you need the value's own attributes applied.

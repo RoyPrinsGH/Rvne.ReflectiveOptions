@@ -1,111 +1,56 @@
 namespace Rvne.ReflectiveOptions.Demo;
 
-internal static class Program
+[Description("Root CLI")]
+internal sealed class Cli(Environment env) : EnvironmentAwareBase(env)
 {
-    private static void Main()
-    {
-        // Compare resolved options for two execution contexts.
-        RunDemo(ExecutionProfile.Local);
-
-        Console.WriteLine();
-
-        RunDemo(ExecutionProfile.CI);
-    }
-
-    private static void RunDemo(ExecutionProfile profile)
-    {
-        // Build a command tree and resolve reflective options from attributes.
-        var root = new CliRoot(profile);
-        var resolved = CommandTree.BuildResolvedTree(root);
-
-        // Print the resolved options at each node.
-        Console.WriteLine($"Profile: {profile}");
-        CommandTree.PrintTree(resolved, indent: 0);
-    }
-}
-
-internal enum ExecutionProfile
-{
-    Local,
-    CI
-}
-
-[Timeout(30_000)]
-[Retries(1)]
-internal sealed class CliRoot : CommandNode
-{
-    // Execution profile is used by derived options in children.
-    public ExecutionProfile Profile { get; }
-
-    // Static options on groups and actions flow through the tree.
-    [MaxParallelism(4)]
-    public SyncGroup Sync { get; } = new();
-
-    public CacheGroup Cache { get; }
-
-    // A leaf command can still carry options.
-    [DryRun(true)]
-    public CommandAction Lint { get; } = new("lint");
-
-    public CliRoot(ExecutionProfile profile) : base("rvne")
-    {
-        Profile = profile;
-        Cache = new CacheGroup(profile);
-
-        Children.Add(Sync);
-        Children.Add(Cache);
-        Children.Add(Lint);
-    }
-}
-
-internal sealed class SyncGroup : CommandGroup
-{
-    [Timeout(15_000)]
-    public CommandAction Pull { get; } = new("pull");
-
-    [Timeout(45_000)]
     [Retries(2)]
-    public CommandAction Push { get; } = new("push");
+    [Timeout(45_000)]
+    [DerivedRunnability(nameof(IsLocalEnv))]
+    [Name("push-remote")]
+    public PushCommand Push { get; } = new();
 
-    public SyncGroup() : base("sync")
+    [DerivedTimeout(nameof(GetPullCommandTimeout))]
+    [Name("pull-remote")]
+    public PullCommand Pull { get; } = new();
+
+    int GetPullCommandTimeout() => IsLocalEnv() ? 15_000 : 90_000;
+}
+
+[Description("Pulls data from the API")]
+internal sealed class PullCommand : ICommand
+{
+    public void Execute()
     {
-        Children.Add(Pull);
-        Children.Add(Push);
+        Console.WriteLine("Pulling!");
     }
 }
 
-internal sealed class CacheGroup : CommandGroup
+[Description("Pushes data to the API")]
+internal sealed class PushCommand : ICommand
 {
-    // Commands that derive behavior from the execution profile.
-    public WarmCacheCommand Warm { get; }
-    public ClearCacheCommand Clear { get; }
-
-    public CacheGroup(ExecutionProfile profile) : base("cache")
+    public void Execute()
     {
-        Warm = new WarmCacheCommand(profile);
-        Clear = new ClearCacheCommand(profile);
-
-        Children.Add(Warm);
-        Children.Add(Clear);
+        Console.WriteLine("Pushing!");
     }
 }
 
-[DerivedTimeout(nameof(ComputeTimeout))]
-internal sealed class WarmCacheCommand(ExecutionProfile profile) : CommandAction("warm")
+internal static partial class Program
 {
-    // Derived option: timeout changes between Local and CI.
-    private readonly ExecutionProfile _profile = profile;
+    private static int Main(string[] args)
+    {
+        if (args.Length > 0)
+        {
+            return RunCommand(Environment.Local, args[0]);
+        }
+        else
+        {
+            PrintCliTreeForEnv(Environment.Local);
+            Console.WriteLine();
+            PrintCliTreeForEnv(Environment.CI);
+            Console.WriteLine();
+            Console.WriteLine("Try: dotnet run --project Rvne.ReflectiveOptions.Demo -- push-remote");
 
-    private int ComputeTimeout()
-        => _profile == ExecutionProfile.CI ? 90_000 : 20_000;
-}
-
-[DerivedVisibility(nameof(ComputeVisibility))]
-internal sealed class ClearCacheCommand(ExecutionProfile profile) : CommandAction("clear")
-{
-    // Derived option: hide destructive command in CI.
-    private readonly ExecutionProfile _profile = profile;
-
-    private bool ComputeVisibility()
-        => _profile != ExecutionProfile.CI;
+            return 0;
+        }
+    }
 }

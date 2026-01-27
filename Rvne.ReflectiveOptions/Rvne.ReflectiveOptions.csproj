@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <PackageId>Rvne.ReflectiveOptions</PackageId>
-    <Version>1.1.0</Version>
+    <Version>2.0.0</Version>
     <Authors>Roy Prins (Rvne)</Authors>
     <Description>Reflective options from attributes for nested node trees.</Description>
     <RepositoryUrl>https://github.com/RoyPrinsGH/Rvne.ReflectiveOptions</RepositoryUrl>
@@ -15,7 +15,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <TargetFrameworks>net6.0;net8.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <LangVersion>14.0</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
