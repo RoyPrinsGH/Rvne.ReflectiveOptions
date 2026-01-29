@@ -21,73 +21,58 @@ There is a small runnable CLI demo that exercises the core scenarios in this REA
 
 ## Usage
 
-### 1) Define option attributes
+### 1) Generate option attributes (recommended)
 
 The demo defines two option domains:
 
 - Runner options on CLI members (`CommandRunnerOptions`)
 - Descriptions on command types (`CommandInfo`)
 
-For compile-time application, inherit `ReflectiveOptionAttribute<TOptions, TMember>`:
+The preferred path is the source generator. It creates both static and derived
+attributes for every public settable property on an options type.
 
 ```csharp
+using System;
 using Rvne.ReflectiveOptions.Attributes;
 
+[GenerateReflectiveOptions]
+[ApplicableOn(GenerationTarget.Member)]
+[Inherited(false)]
 public sealed class CommandRunnerOptions
 {
+    [Alias("Timeout")]
     public int TimeoutMs { get; set; } = 30_000;
+
     public int Retries { get; set; }
+
+    [Alias("Runnability")]
     public bool Runnable { get; set; } = true;
+
     public string? Name { get; set; }
 }
 
-[AttributeUsage(AttributeTargets.Property)]
-public sealed class TimeoutAttribute(int value)
-    : ReflectiveOptionAttribute<CommandRunnerOptions, int>(nameof(CommandRunnerOptions.TimeoutMs), value);
-
-[AttributeUsage(AttributeTargets.Property)]
-public sealed class RetriesAttribute(int value)
-    : ReflectiveOptionAttribute<CommandRunnerOptions, int>(nameof(CommandRunnerOptions.Retries), value);
-
-[AttributeUsage(AttributeTargets.Property)]
-public sealed class NameAttribute(string value)
-    : ReflectiveOptionAttribute<CommandRunnerOptions, string>(nameof(CommandRunnerOptions.Name), value);
-
+[GenerateReflectiveOptions]
+[ApplicableOn(GenerationTarget.Class)]
+[Inherited(false)]
 public sealed class CommandInfo
 {
+    [Alias("Description")]
     public string? Description { get; set; }
 }
-
-[AttributeUsage(AttributeTargets.Class)]
-public sealed class DescriptionAttribute(string description)
-    : ReflectiveOptionAttribute<CommandInfo, string>(nameof(CommandInfo.Description), description);
 ```
 
-For derived values, inherit `DerivedReflectiveOptionAttribute<TOptions, TDerivationResult>`:
+Use `[Ignore]` on a property to skip generation for that member.
+Use `[ApplicableOn]`, `[Inherited]`, and `[AllowMultiple]` to control
+the generated `AttributeUsage` targets, `Inherited`, and `AllowMultiple`.
 
-```csharp
-using Rvne.ReflectiveOptions.Attributes;
+From the `CommandRunnerOptions` example above, the generator produces:
 
-[AttributeUsage(AttributeTargets.Property)]
-public sealed class DerivedTimeoutAttribute(string methodName)
-    : DerivedReflectiveOptionAttribute<CommandRunnerOptions, int>(nameof(CommandRunnerOptions.TimeoutMs), methodName);
+- `TimeoutAttribute` and `DerivedTimeoutAttribute`
+- `RetriesAttribute` and `DerivedRetriesAttribute`
+- `RunnabilityAttribute` and `DerivedRunnabilityAttribute`
+- `NameAttribute` and `DerivedNameAttribute`
 
-[AttributeUsage(AttributeTargets.Property)]
-public sealed class DerivedRunnabilityAttribute(string methodName)
-    : DerivedReflectiveOptionAttribute<CommandRunnerOptions, bool>(nameof(CommandRunnerOptions.Runnable), methodName);
-```
-
-If you need complete control, you can implement the middleware interfaces directly:
-
-```csharp
-using Rvne.ReflectiveOptions.Interfaces;
-
-[AttributeUsage(AttributeTargets.Property)]
-public sealed class CustomTimeoutAttribute(int value) : Attribute, IStaticOptionMiddleware<CommandRunnerOptions>
-{
-    public void Apply(CommandRunnerOptions options) => options.TimeoutMs = value;
-}
-```
+From `CommandInfo`, it produces `DescriptionAttribute` and `DerivedDescriptionAttribute`.
 
 ### 2) Annotate your source type
 
@@ -126,6 +111,9 @@ public sealed class Cli(Environment env) : EnvironmentAwareBase(env)
 
 ```csharp
 var root = new Cli(Environment.CI);
+
+var rootOptions = root.GetOptions<CommandInfo>();
+// rootOptions.Description == "Root CLI"
 
 var pullOptions = root.GetMemberOptions<CommandRunnerOptions>(nameof(Cli.Pull));
 // pullOptions.TimeoutMs == 90_000

@@ -5,10 +5,14 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
-
+  
   <ItemGroup>
     <ProjectReference Include="../Rvne.ReflectiveOptions/Rvne.ReflectiveOptions.csproj" />
+    <ProjectReference Include="../Rvne.ReflectiveOptions.Generators/Rvne.ReflectiveOptions.Generators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

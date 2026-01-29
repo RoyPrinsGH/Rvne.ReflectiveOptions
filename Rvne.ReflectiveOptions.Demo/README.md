@@ -11,6 +11,12 @@ The key pieces live here:
 - `Rvne.ReflectiveOptions.Demo/Program.cs`
 - `Rvne.ReflectiveOptions.Demo/DemoInfrastructure.cs`
 
+The demo also enables the source generator. Attributes like `[Timeout]`,
+`[DerivedTimeout]`, `[Runnability]`, and `[Description]` are generated from the
+options types in `Rvne.ReflectiveOptions.Demo/DemoInfrastructure.cs`. The
+`[ReflectionOptions(...)]` attribute on those options types controls the
+generated `AttributeUsage` targets, `Inherited`, and `AllowMultiple`.
+
 ## Run It
 
 From the repo root:
@@ -43,13 +49,8 @@ The runner:
 
 This demo is meant to be poked at. A few fun edits:
 
-1. Change derived behavior.
-   - In `Cli.GetPullCommandTimeout`, swap the timeouts or add more branching.
-2. Hide a command outside local.
-   - The `Push` command uses `[DerivedRunnability(nameof(IsLocalEnv))]`.
-   - Try changing it to always return `true` or `false`.
-3. Add a new command.
-   - Create a new `ICommand` type with `[Description(...)]`.
-   - Add a new property on classes specifying a `UsageTemplate`
-4. Move the derivation method.
-   - Try putting a derivation method on a base class (like `EnvironmentAwareBase`) and reference it by name.
+1. Change derived behavior: in `Cli.GetPullCommandTimeout`, swap the timeouts or add more branching.
+2. Hide or allow a command outside local: the `Push` command uses `[DerivedRunnability(nameof(IsLocalEnv))]`.
+3. Add a new command: create a new `ICommand` type with `[Description(...)]`, then add a property on `Cli` with attributes like `[Timeout(...)]` and `[Name(...)]`.
+4. Change generated attribute names: edit the `[ReflectiveOptionAlias(...)]` values on the options types.
+5. Move the derivation method: put a derivation method on a base class (like `EnvironmentAwareBase`) and reference it by name.
