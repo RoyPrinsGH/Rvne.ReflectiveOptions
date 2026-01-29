@@ -1,7 +1,6 @@
 <Solution>
   <Project Path="Rvne.ReflectiveOptions/Rvne.ReflectiveOptions.csproj" />
   <Project Path="Rvne.ReflectiveOptions.Generators/Rvne.ReflectiveOptions.Generators.csproj" />
-  <Project Path="Rvne.ReflectiveOptions.NugetSmoke/Rvne.ReflectiveOptions.NugetSmoke.csproj" />
   <Project Path="Rvne.ReflectiveOptions.Tests/Rvne.ReflectiveOptions.Tests.csproj" />
   <Project Path="Rvne.ReflectiveOptions.Demo/Rvne.ReflectiveOptions.Demo.csproj" />
 </Solution>
