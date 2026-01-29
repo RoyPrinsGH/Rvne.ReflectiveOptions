@@ -15,14 +15,25 @@ internal abstract class EnvironmentAwareBase(Environment env)
         => env == Environment.Local;
 }
 
+[GenerateReflectiveOptions]
+[ApplicableOn(GenerationTarget.Member)]
+[Inherited(false)]
 internal sealed class CommandRunnerOptions
 {
+    [Alias("Timeout")]
     public int TimeoutMs { get; set; } = 30_000;
+
     public int Retries { get; set; }
+
+    [Alias("Runnability")]
     public bool Runnable { get; set; } = true;
+
     public string? Name { get; set; }
 }
 
+[GenerateReflectiveOptions]
+[ApplicableOn(GenerationTarget.Class)]
+[Inherited(false)]
 internal sealed class CommandInfo
 {
     public string? Description { get; set; }
@@ -32,32 +43,6 @@ internal interface ICommand
 {
     void Execute();
 }
-
-// CommandRunnerOptions
-[AttributeUsage(AttributeTargets.Property)]
-internal sealed class TimeoutAttribute(int value)
-    : ReflectiveOptionAttribute<CommandRunnerOptions, int>(nameof(CommandRunnerOptions.TimeoutMs), value);
-
-[AttributeUsage(AttributeTargets.Property)]
-internal sealed class RetriesAttribute(int value)
-    : ReflectiveOptionAttribute<CommandRunnerOptions, int>(nameof(CommandRunnerOptions.Retries), value);
-
-[AttributeUsage(AttributeTargets.Property)]
-internal sealed class NameAttribute(string value)
-    : ReflectiveOptionAttribute<CommandRunnerOptions, string>(nameof(CommandRunnerOptions.Name), value);
-
-[AttributeUsage(AttributeTargets.Property)]
-internal sealed class DerivedTimeoutAttribute(string methodName)
-    : DerivedReflectiveOptionAttribute<CommandRunnerOptions, int>(nameof(CommandRunnerOptions.TimeoutMs), methodName);
-
-[AttributeUsage(AttributeTargets.Property)]
-internal sealed class DerivedRunnabilityAttribute(string methodName)
-    : DerivedReflectiveOptionAttribute<CommandRunnerOptions, bool>(nameof(CommandRunnerOptions.Runnable), methodName);
-
-// CommandInfo
-[AttributeUsage(AttributeTargets.Class)]
-internal sealed class DescriptionAttribute(string description)
-    : ReflectiveOptionAttribute<CommandInfo, string>(nameof(CommandInfo.Description), description);
 
 internal static partial class Program
 {
