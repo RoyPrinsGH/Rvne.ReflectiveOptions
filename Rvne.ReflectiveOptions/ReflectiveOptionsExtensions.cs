@@ -57,13 +57,13 @@ public static class ReflectiveOptionsExtensions
     /// <summary>
     /// Builds options from the attributes applied to a specific member on the declaring instance.
     /// </summary>
-    public static TOptions GetMemberOptions<TOptions>(this object declaringInstance, MethodInfo methodInfo)
+    public static TOptions GetMemberOptions<TOptions>(this object declaringInstance, MemberInfo memberInfo)
         where TOptions : new()
     {
         ArgumentNullException.ThrowIfNull(declaringInstance);
-        ArgumentNullException.ThrowIfNull(methodInfo);
+        ArgumentNullException.ThrowIfNull(memberInfo);
 
-        IEnumerable<Attribute> memberAttributes = methodInfo
+        IEnumerable<Attribute> memberAttributes = memberInfo
             .GetCustomAttributes(inherit: true)
             .Cast<Attribute>();
 
